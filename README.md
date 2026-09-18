@@ -5,146 +5,67 @@ holdings. Nothing about the schema, seed data, or business logic hardcodes a
 ticker — the database starts empty and everything (charts, groups, totals) is
 derived at runtime from whatever you add.
 
-## Screenshots
+Four bottom-nav tabs — **Portfolio**, **Formation**, **Groups**, **Settings** —
+swipeable as well as tappable (dark theme, Pixel 7 Pro):
 
-<p align="center">
-  <img src="docs/screenshots/portfolio.png" alt="Portfolio dashboard with total value, gain/loss and holdings list" width="230">
-  <img src="docs/screenshots/allocation.png" alt="Collapsible allocation donut chart on the dashboard" width="230">
-  <img src="docs/screenshots/holding-detail.png" alt="Holding detail with price-history chart and 1D to Max range selector" width="230">
-</p>
-<p align="center">
-  <img src="docs/screenshots/formation.png" alt="Soccer Formation view assigning holdings to attack, midfield, defense and goalkeeper" width="230">
-  <img src="docs/screenshots/groups.png" alt="Groups tab with allocation donut and per-group targets" width="230">
-</p>
+| Portfolio                                                                            | Allocation                                                           | Holding detail                                                                | Formation                                                                      | Groups                                                            |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| ![Portfolio dashboard](docs/screenshots/portfolio.png)                               | ![Allocation chart](docs/screenshots/allocation.png)                 | ![Holding detail](docs/screenshots/holding-detail.png)                        | ![Formation view](docs/screenshots/formation.png)                              | ![Groups tab](docs/screenshots/groups.png)                        |
+| Total value, gain/loss and a sortable holdings list, tabbed Individual Stocks / ETFs | Collapsible donut chart — drag a finger across it to inspect a slice | Price history with 1D–Max ranges and scrubbing, group membership, recent news | Holdings on a soccer pitch by risk role: attack, midfield, defense, goalkeeper | Buckets with target allocations and an "add $X to reach 40%" hint |
 
-<sub>Portfolio dashboard · allocation chart · holding detail · Formation view · groups (dark theme, Pixel 7 Pro).</sub>
+## Requirements
 
-## What it does
+* A recent Android Studio (one that supports AGP 8.13)
+* JDK 17–21 — set it as Android Studio's Gradle JVM (*Settings → Build Tools →
+  Gradle → Gradle JVM*), or via `JAVA_HOME` for the command line. Gradle 8.13
+  doesn't support the JDK 25 that recent Android Studio bundles. To pin one, put
+  `org.gradle.java.home=<path>` in your user-level `~/.gradle/gradle.properties`
+  — not in the project's `gradle.properties`, since that path is
+  machine-specific
+* Android SDK with API 35 installed
+* Runs on **Android 8.0 (API 26)** and up; compiled and targeted against **API 35**
+* A free [Finnhub](https://finnhub.io/register) API key for live quotes, news and
+  ticker search (optional — the app builds and runs without one)
 
-- **Holdings** — add / edit / delete by ticker with search-as-you-type lookup
-  (debounced 300 ms). Live quotes via Finnhub, cached in Room. Adding a ticker
-  you already hold merges into that position (shares and cost basis both sum,
-  so average cost updates itself) rather than creating a second row for the
-  same stock — the app flags it before you save so it's never a surprise.
-- **Cash** — a synthetic `$CASH` position (price pinned to 1.0, never quoted)
-  that flows through every calculation, the pie chart and the group buckets with
-  no special cases in the math.
-- **Dashboard** — total value, all-time and day gain/loss, a today-dated header
-  in the device's current time zone, an interactive donut chart (drag a finger
-  across it to inspect a slice), and a holdings list.
-- **Individual Stocks / ETFs tabs** — the Dashboard's allocation chart and
-  holdings list are tabbed between **Individual Stocks** and **ETFs**, one
-  group shown at a time; swipe left/right on the chart/list area to switch,
-  same as tapping a tab (a `HorizontalPager` backs the two tabs, so each page
-  scrolls independently while the total-value card above stays put). A stock's
-  `isEtf` classification is guessed from the price provider's search result
-  when you add or import it (correctable by hand on the Add/Edit and
-  photo-import-review screens). Because each tab's chart is built only from
-  that group's own holdings, its slice percentages sum to 100% on their own —
-  "what fraction of my ETFs is this one," not "of my whole portfolio." Cash
-  stays under Individual Stocks, matching how it already behaves everywhere
-  else in the app. The chart card is **collapsed by default** — tap its header
-  (a chevron shows the state) to expand it — so the holdings list sits right
-  under the hero card instead of below a full donut chart and up-to-8-row
-  legend; each tab remembers its own collapsed/expanded state independently.
-- **Sortable holdings list** — tap the **Symbol / Price / Value** column headers
-  to reorder ascending/descending; unpriced rows always sink to the bottom. Each
-  row shows the latest per-share price, today's move, market value, gain %, and a
-  colour dot matching its pie slice.
-- **Per-holding detail** — big price, today's move, average cost, gain/loss,
-  % of portfolio, a [price-history chart with a range selector](#price-history-range-selector),
-  group membership, and a [recent-news feed](#holding-news-feed).
-- **Groups** — user-defined buckets with an optional target allocation and an
-  *"add $X to reach 40%"* indicator; a stock can be in several groups. Each
-  group is typed as tracking **Individual Stocks** or **ETFs**, and the Groups
-  tab is split the same way as the Dashboard — swipeable, one `HorizontalPager`
-  page per type — with a group's current/target % measured as a share of that
-  type's own total, not the whole portfolio, so a stocks-type group and an
-  ETF-type group each have an independent 100%. The membership picker on a
-  group's detail screen only offers holdings matching that group's own type,
-  so an ETF can't end up inflating a stocks-type group's percentage (or vice
-  versa). Within each tab, groups are ordered by current value, largest first.
-  Each tab also opens with a donut
-  chart of that type's groups by dollar value (one slice per group, center
-  shows the total currently in groups), same chart component as the Dashboard's
-  allocation chart, sitting above the list of group cards.
-- **Import from a photo** — snap or pick a screenshot of a positions list and
-  GoldDigger reads the ticker, shares and average cost off it on-device, then
-  lets you check and fix every row before anything is added. See
-  [Import a portfolio from a photo](#import-a-portfolio-from-a-photo).
-- **Formation** — your holdings arranged on a soccer pitch by *risk role*
-  (goalkeeper = cash, defense = low beta, midfield = market-like, attack = high
-  beta / sector-correlated / volatile). Zone height tracks the dollars in the
-  zone; automated "gap" callouts flag a thin defense, an over-large cash keeper,
-  or a front-loaded lineup. Roles are computed from live metrics and can be
-  manually overridden per holding. See [Soccer Formation view](#soccer-formation-view).
-- **Swipeable tabs** — the four top-level screens (Portfolio, Formation,
-  Groups, Settings) live in a `HorizontalPager` behind the bottom nav, so a
-  left/right swipe anywhere on a screen switches tabs the same as tapping an
-  icon; both stay in sync through one shared `PagerState`.
-- **Sync** — pull-to-refresh plus a periodic `WorkManager` job (interval
-  configurable, market-hours-only optional), all through one rate limiter.
-- **Offline** — the UI only ever reads Room, so cached prices and news stay
-  visible with a staleness indicator when the network is down.
+## Setup
 
-## Stack
-
-| Concern         | Choice                                                                                                 |
-| --------------- | ------------------------------------------------------------------------------------------------------ |
-| Language        | Kotlin                                                                                                 |
-| UI              | Jetpack Compose + Material 3, branded gold/green palette (light + dark), themed adaptive launcher icon |
-| Architecture    | MVVM + Repository, unidirectional `StateFlow`                                                          |
-| DI              | Hilt                                                                                                   |
-| Persistence     | Room (single source of truth — the UI only ever observes Room)                                         |
-| Networking      | Retrofit + OkHttp + kotlinx.serialization                                                              |
-| Background work | WorkManager (periodic, constraint-aware)                                                               |
-| Charts          | Compose `Canvas` (interactive pie, scrubbable price-history chart, formation pitch) — no chart library |
-| Images          | Coil (news thumbnails only)                                                                            |
-| OCR             | ML Kit Text Recognition (bundled, on-device — no network call, no API key)                             |
-| Tests           | JUnit, Turbine, MockK, Truth, Room `MigrationTestHelper`, Compose UI tests                             |
-
-`applicationId` / `namespace` = `com.golddigger.app` (debug build is
-`.debug`). `minSdk 26`, `compileSdk` / `targetSdk 35`.
-
-## Toolchain
-
-|                       | Version                                                                                                                                      |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Android Gradle Plugin | 8.13.2                                                                                                                                       |
-| Gradle wrapper        | 8.13                                                                                                                                         |
-| Kotlin / KSP          | 2.0.21 / 2.0.21-1.0.28                                                                                                                       |
-| JDK                   | 17–21 (Gradle 8.13 doesn't support the JDK 25 that recent Android Studio bundles, so point Gradle at a JDK 17–21 — see *Getting it running*) |
-
-Staying on AGP 8.13.2 is deliberate — AGP 9's built-in-Kotlin feature is not yet
-compatible with KSP, so the "AGP can be upgraded" banner in Studio should be
-dismissed.
-
-## Getting it running
-
-1. **Gradle JVM.** In Android Studio: *Settings → Build Tools → Gradle → Gradle
-   JVM* → a JDK 17–21. For the command line, set `JAVA_HOME` to one (or put
-   `org.gradle.java.home=<path>` in your own `~/.gradle/gradle.properties` — the
-   project's `gradle.properties` deliberately doesn't pin a machine-specific path).
-2. **Add an API key.** Copy `local.properties.example` to `local.properties`
-   (Android Studio usually creates `local.properties` with `sdk.dir` for you) and
-   add:
+1. Clone the repo and open it in Android Studio (or build from the command line).
+2. Create `local.properties` in the project root (Android Studio makes one
+   automatically; otherwise copy `local.properties.example`):
 
    ```properties
+   sdk.dir=/path/to/Android/Sdk
    FINNHUB_API_KEY=your_key_here
    ```
 
-   Get a free key at <https://finnhub.io/register>. Without a key the app still
-   builds and runs — it just shows a *"No price API key configured"* status
-   instead of live quotes.
-3. **Build & run.**
+3. Build & run:
 
    ```bash
-   ./gradlew :app:installDebug        # or use the Run button
-   ./gradlew testDebugUnitTest        # JVM unit tests
-   ./gradlew connectedDebugAndroidTest  # instrumentation tests (needs a device)
+   ./gradlew :app:assembleDebug        # build the APK
+   ./gradlew :app:installDebug         # install on a running device/emulator
+   ./gradlew :app:testDebugUnitTest    # JVM unit tests
+   ./gradlew :app:connectedDebugAndroidTest   # instrumentation tests (needs a device)
+   ./gradlew :app:lintDebug            # Android lint
    ```
 
-## Sample flow (MVP acceptance path)
+### Where the API key goes
+
+Live quotes, company profiles, ticker search and news all come from
+**Finnhub**. The key is **never committed**:
+
+* Put `FINNHUB_API_KEY` in `local.properties` (git-ignored).
+* `app/build.gradle.kts` reads it at configure time and exposes it as
+  `BuildConfig.FINNHUB_API_KEY` (it also falls back to a `FINNHUB_API_KEY`
+  environment variable, which is handy for CI).
+* If the key is missing the app still builds and every other feature works;
+  prices just show a *"No price API key configured"* status instead of live
+  quotes.
+* The key is appended to each request by an OkHttp interceptor that runs
+  *after* the debug logging interceptor, so it never appears in Logcat.
+
+Get a free key at <https://finnhub.io/register>.
+
+### Sample flow (MVP acceptance path)
 
 1. First launch shows the empty-state prompt → **Add a holding** (or tap the
    wallet icon to add cash, or the camera icon / *"Or import from a photo"*
@@ -163,7 +84,133 @@ dismissed.
    (Attack / Midfield / Defense) or as the Goalkeeper if it's cash. Long-press a
    player chip to pin its role by hand.
 
-## Where the money math lives
+## Features
+
+* **Holdings** — add / edit / delete by ticker with search-as-you-type lookup
+  (debounced 300 ms). Live quotes via Finnhub, cached in Room. Adding a ticker
+  you already hold merges into that position (shares and cost basis both sum,
+  so average cost updates itself) rather than creating a second row for the
+  same stock — the app flags it before you save so it's never a surprise.
+* **Cash** — a synthetic `$CASH` position (price pinned to 1.0, never quoted)
+  that flows through every calculation, the pie chart and the group buckets with
+  no special cases in the math.
+* **Dashboard** — total value, all-time and day gain/loss, a today-dated header
+  in the device's current time zone, an interactive donut chart (drag a finger
+  across it to inspect a slice), and a holdings list.
+* **Individual Stocks / ETFs tabs** — the Dashboard's allocation chart and
+  holdings list are tabbed between **Individual Stocks** and **ETFs**, one
+  group shown at a time; swipe left/right on the chart/list area to switch,
+  same as tapping a tab (a `HorizontalPager` backs the two tabs, so each page
+  scrolls independently while the total-value card above stays put). A stock's
+  `isEtf` classification is guessed from the price provider's search result
+  when you add or import it (correctable by hand on the Add/Edit and
+  photo-import-review screens). Because each tab's chart is built only from
+  that group's own holdings, its slice percentages sum to 100% on their own —
+  "what fraction of my ETFs is this one," not "of my whole portfolio." Cash
+  stays under Individual Stocks, matching how it already behaves everywhere
+  else in the app. The chart card is **collapsed by default** — tap its header
+  (a chevron shows the state) to expand it — so the holdings list sits right
+  under the hero card instead of below a full donut chart and up-to-8-row
+  legend; each tab remembers its own collapsed/expanded state independently.
+* **Sortable holdings list** — tap the **Symbol / Price / Value** column headers
+  to reorder ascending/descending; unpriced rows always sink to the bottom. Each
+  row shows the latest per-share price, today's move, market value, gain %, and a
+  colour dot matching its pie slice.
+* **Per-holding detail** — big price, today's move, average cost, gain/loss,
+  % of portfolio, a [price-history chart with a range selector](#price-history-range-selector),
+  group membership, and a [recent-news feed](#holding-news-feed).
+* **Groups** — user-defined buckets with an optional target allocation and an
+  *"add $X to reach 40%"* indicator; a stock can be in several groups. Each
+  group is typed as tracking **Individual Stocks** or **ETFs**, and the Groups
+  tab is split the same way as the Dashboard — swipeable, one `HorizontalPager`
+  page per type — with a group's current/target % measured as a share of that
+  type's own total, not the whole portfolio, so a stocks-type group and an
+  ETF-type group each have an independent 100%. The membership picker on a
+  group's detail screen only offers holdings matching that group's own type,
+  so an ETF can't end up inflating a stocks-type group's percentage (or vice
+  versa). Within each tab, groups are ordered by current value, largest first.
+  Each tab also opens with a donut
+  chart of that type's groups by dollar value (one slice per group, center
+  shows the total currently in groups), same chart component as the Dashboard's
+  allocation chart, sitting above the list of group cards.
+* **Import from a photo** — snap or pick a screenshot of a positions list and
+  GoldDigger reads the ticker, shares and average cost off it on-device, then
+  lets you check and fix every row before anything is added. See
+  [Import a portfolio from a photo](#import-a-portfolio-from-a-photo).
+* **Formation** — your holdings arranged on a soccer pitch by *risk role*
+  (goalkeeper = cash, defense = low beta, midfield = market-like, attack = high
+  beta / sector-correlated / volatile). Zone height tracks the dollars in the
+  zone; automated "gap" callouts flag a thin defense, an over-large cash keeper,
+  or a front-loaded lineup. Roles are computed from live metrics and can be
+  manually overridden per holding. See [Soccer Formation view](#soccer-formation-view).
+* **Swipeable tabs** — the four top-level screens (Portfolio, Formation,
+  Groups, Settings) live in a `HorizontalPager` behind the bottom nav, so a
+  left/right swipe anywhere on a screen switches tabs the same as tapping an
+  icon; both stay in sync through one shared `PagerState`.
+* **Sync** — pull-to-refresh plus a periodic `WorkManager` job (interval
+  configurable, market-hours-only optional), all through one rate limiter.
+* **Offline** — the UI only ever reads Room, so cached prices and news stay
+  visible with a staleness indicator when the network is down.
+
+## Architecture
+
+MVVM + a repository layer, Hilt for DI, coroutines/`StateFlow` throughout,
+single-Activity Compose with Compose Navigation and a bottom navigation bar.
+Room is the single source of truth — the UI only ever observes Room.
+
+```
+core/        constants (SyncConfig, FormationConfig), MarketHours, CashHolding
+data/
+  local/     Room entities, DAOs, relations, migrations
+  remote/    StockPriceApi abstraction, Finnhub impl, RequestThrottler
+  repository/ PortfolioRepository (single source of truth), SyncState
+  settings/  DataStore-backed SyncSettings
+  ocr/       PortfolioPhotoDecoder, TextRecognizerService (ML Kit wrapper)
+domain/      PortfolioCalculator, FormationClassifier, RiskMath,
+             PortfolioOcrParser + pure models
+di/          Hilt modules
+work/        PriceSyncWorker + PriceSyncScheduler
+ui/
+  theme/     brand palette, typography
+  components/ SectionCard, DeltaChip, ColorDot, charts, wordmark
+  dashboard/ formation/ groups/ holding/ importphoto/ settings/   screens + ViewModels
+  navigation/  NavHost + routes; GoldDiggerApp hosts the 4 top-level tabs in a
+               HorizontalPager behind the bottom nav (swipeable)
+```
+
+### Stack
+
+| Concern         | Choice                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| Language        | Kotlin                                                                                                 |
+| UI              | Jetpack Compose + Material 3, branded gold/green palette (light + dark), themed adaptive launcher icon |
+| Architecture    | MVVM + Repository, unidirectional `StateFlow`                                                          |
+| DI              | Hilt                                                                                                   |
+| Persistence     | Room (single source of truth — the UI only ever observes Room)                                         |
+| Networking      | Retrofit + OkHttp + kotlinx.serialization                                                              |
+| Background work | WorkManager (periodic, constraint-aware)                                                               |
+| Charts          | Compose `Canvas` (interactive pie, scrubbable price-history chart, formation pitch) — no chart library |
+| Images          | Coil (news thumbnails only)                                                                            |
+| OCR             | ML Kit Text Recognition (bundled, on-device — no network call, no API key)                             |
+| Tests           | JUnit, Turbine, MockK, Truth, Room `MigrationTestHelper`, Compose UI tests                             |
+
+`applicationId` / `namespace` = `com.golddigger.app` (debug build is
+`.debug`). `minSdk 26`, `compileSdk` / `targetSdk 35`.
+
+### Toolchain
+
+|                       | Version                                                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Android Gradle Plugin | 8.13.2                                                                                                                                 |
+| Gradle wrapper        | 8.13                                                                                                                                   |
+| Kotlin / KSP          | 2.0.21 / 2.0.21-1.0.28                                                                                                                 |
+| JDK                   | 17–21 (Gradle 8.13 doesn't support the JDK 25 that recent Android Studio bundles, so point Gradle at a JDK 17–21 — see *Requirements*) |
+
+Staying on AGP 8.13.2 is deliberate — AGP 9's built-in-Kotlin feature is not yet
+compatible with KSP, so the "AGP can be upgraded" banner in Studio should be
+dismissed.
+
+### Where the money math lives
 
 All monetary calculations — gain/loss, allocation %, `amountToTarget` — are pure
 functions in
@@ -173,39 +220,39 @@ with no Android or coroutine dependencies, unit-tested in
 ViewModels never do arithmetic themselves. The holdings-list ordering is likewise
 a pure `sortHoldings()` function, tested in `HoldingSortTest`.
 
-## Rate limiting & batching (built in from day one)
+### Rate limiting & batching (built in from day one)
 
 Everything the throttling story needs is in
 [`SyncConfig`](app/src/main/java/com/golddigger/app/core/SyncConfig.kt) — no magic
 numbers elsewhere:
 
-- **Shared throttler.**
+* **Shared throttler.**
   [`RequestThrottler`](app/src/main/java/com/golddigger/app/data/remote/throttle/RequestThrottler.kt)
   is a sliding-window limiter (`MAX_REQUESTS_PER_MINUTE = 50`) that *every* code
   path goes through — pull-to-refresh, background sync, and ticker search — so the
   app can never exceed the provider's free-tier cap even with 100+ holdings.
-- **Batching.** The repository chunks held tickers into
+* **Batching.** The repository chunks held tickers into
   `min(settings.batchSize, api.maxSymbolsPerQuoteRequest)` per call. Finnhub's
   free `/quote` endpoint is single-symbol, so this is 1 and calls are throttled +
   sequential. A provider with a multi-symbol endpoint reports a higher
   `maxSymbolsPerQuoteRequest` and the same code packs more per call.
-- **Cache-first.** A price fetched within the active refresh interval is not
+* **Cache-first.** A price fetched within the active refresh interval is not
   re-fetched, even if several screens ask at once (`SyncConfig.isFresh` + a
   coalescing `Mutex` in the repository).
-- **Rate-limit UX.** A 429 becomes a calm status line —
+* **Rate-limit UX.** A 429 becomes a calm status line —
   *"Prices from 9:41 AM. Refresh limit reached — next update in ~3 min"* — via
   [`SyncState`](app/src/main/java/com/golddigger/app/data/repository/SyncState.kt)
   and `SyncStatusBar`, never an error dialog or silent failure.
-- **Tunable.** Refresh interval and batch size are user settings (persisted in
+* **Tunable.** Refresh interval and batch size are user settings (persisted in
   DataStore) so switching to a paid tier needs no code change.
 
-## Offline behaviour
+### Offline behaviour
 
 Network results always land in Room first; the UI only observes Room. If a sync
 fails the last `PriceCache` row is still shown, with a relative-time "stale"
 indicator. `PriceCache` exists precisely so there is always something to render.
 
-## Swapping the price provider
+### Swapping the price provider
 
 The provider is isolated behind
 [`StockPriceApi`](app/src/main/java/com/golddigger/app/data/remote/StockPriceApi.kt).
@@ -224,7 +271,7 @@ Alpha Vantage / Twelve Data / IEX:
 
 Nothing else changes.
 
-## Data model (Room)
+### Data model (Room)
 
 `stocks` (ticker PK; also holds `beta` / `sectorCorrelation` / `riskUpdatedAt`
 for the Formation view and `isEtf`, classifying it as an ETF vs. an individual
@@ -246,7 +293,7 @@ columns; `MIGRATION_3_4` added `stocks.isEtf`; `MIGRATION_4_5` added
 [`Migrations.kt`](app/src/main/java/com/golddigger/app/data/local/Migrations.kt)
 for the step-by-step when v6 arrives.
 
-## Soccer Formation view
+### Soccer Formation view
 
 The **Formation** tab maps every holding onto a pitch so you can read your
 portfolio's *risk shape* at a glance instead of a list.
@@ -282,22 +329,22 @@ separate band stacked above the player chips rather than free-floating in the
 same space, so a crowded, multi-row zone can never render a chip on top of its
 own label either.
 
-- **All the logic is a pure use case.** Role assignment, the gap-detection
+* **All the logic is a pure use case.** Role assignment, the gap-detection
   rules and zone sizing live in
   [`FormationClassifier`](app/src/main/java/com/golddigger/app/domain/FormationClassifier.kt);
   the numeric primitives (returns, correlation, beta, realized volatility) are in
   [`RiskMath`](app/src/main/java/com/golddigger/app/domain/RiskMath.kt). Both are
   Android-free and unit-tested (`FormationClassifierTest`, `RiskMathTest`).
   Nothing is keyed to a ticker, so it works for any stock added later.
-- **Every threshold is a constant** in
+* **Every threshold is a constant** in
   [`FormationConfig`](app/src/main/java/com/golddigger/app/core/FormationConfig.kt) —
   beta cut-offs, correlation bands, the volatility trigger, and the three
   gap-insight percentages — never a magic number in a Composable.
-- **Beta** comes from Finnhub's `/stock/metric` endpoint (free tier), cached on
+* **Beta** comes from Finnhub's `/stock/metric` endpoint (free tier), cached on
   `stocks.beta` and refreshed on a 7-day TTL, not on every screen open. When a
   provider returns no beta, it is estimated from accumulated price history
   against the portfolio's own value series.
-- **Dominant-sector correlation** is estimated from the trailing price history of
+* **Dominant-sector correlation** is estimated from the trailing price history of
   the user's own holdings in the largest sector. The spec's ETF-proxy approach
   (SOXX for semis, XLK for tech, …) needs historical candles, which Finnhub's
   free tier does not serve — `FormationConfig.SECTOR_PROXIES` is wired for a
@@ -305,12 +352,12 @@ own label either.
   (`DEFAULT_BETA_BENCHMARK`): that is the definition of *market* beta, and the
   sector tilt of a concentrated book is captured by the correlation leg, not by
   swapping in a tech index (which would flatten every tech name to ~1.0).
-- **Manual override.** Long-press any player chip to pin its role; the choice is
+* **Manual override.** Long-press any player chip to pin its role; the choice is
   stored in `holdings.roleOverride` and survives the next metrics refresh.
-- **Graceful with no data.** A holding with no beta and no history sits on the
+* **Graceful with no data.** A holding with no beta and no history sits on the
   bench rather than being guessed at or crashing the screen.
 
-## Import a portfolio from a photo
+### Import a portfolio from a photo
 
 The camera icon on the dashboard (and the empty-state's secondary action) opens
 a flow that turns a photo of a positions list — another broker's app, a
@@ -370,13 +417,13 @@ statement, a screenshot — into holdings, without typing anything.
 No schema change was needed for this feature — imported holdings are
 ordinary `HoldingEntity` rows.
 
-## Price history range selector
+### Price history range selector
 
 The Holding Detail screen's price chart has the usual **1D / 5D / 1M / 6M /
 YTD / 1Y / 5Y / Max** range picker, plus a `$change (pct%)` chip for whatever
 range is selected. A few things worth knowing about how it actually works:
 
-- **There's no historical-candles endpoint behind this** (Finnhub's free tier
+* **There's no historical-candles endpoint behind this** (Finnhub's free tier
   doesn't serve one — see [Swapping the price provider](#swapping-the-price-provider)).
   Every point on the chart is a real price GoldDigger itself recorded at sync
   time, in the `price_points` table — an intraday snapshot, not a daily close.
@@ -384,16 +431,16 @@ range is selected. A few things worth knowing about how it actually works:
   syncing that ticker; a holding added yesterday has nothing to show for "1Y"
   yet. This is honest by design — there's no backfilled or interpolated data
   standing in for history that was never recorded.
-- Each range ([`PriceRange`](app/src/main/java/com/golddigger/app/domain/model/PriceRange.kt),
+* Each range ([`PriceRange`](app/src/main/java/com/golddigger/app/domain/model/PriceRange.kt),
   Android-free and unit-tested in `PriceRangeTest`) resolves to a lower-bound
   timestamp *at read time* — "1Y" always means "the last 365 days from now,"
   not a fixed calendar window — via `PriceDao.observePointsSince`, a new
   timestamp-filtered query alongside the existing "last N points" one.
-- `PriceDao.trimHistory`'s retention cap was raised from ~120 points/ticker
+* `PriceDao.trimHistory`'s retention cap was raised from ~120 points/ticker
   (about a day at the fastest sync interval) to 5,000, so months/years of
   history can actually accumulate for the longer ranges instead of being
   silently deleted within a day or two of being written.
-- The chart itself ([`PriceHistoryChart`](app/src/main/java/com/golddigger/app/ui/components/Charts.kt))
+* The chart itself ([`PriceHistoryChart`](app/src/main/java/com/golddigger/app/ui/components/Charts.kt))
   places points by **elapsed time, not index** — a range with uneven sync
   gaps (a weekend, a stretch with background sync off) renders those gaps
   proportionally rather than pretending every point is evenly spaced — and
@@ -401,13 +448,13 @@ range is selected. A few things worth knowing about how it actually works:
   below its first, matching the app's gain/loss color language everywhere
   else. Cash is skipped (it's pinned at $1 and never synced to a price
   provider, so there's nothing to chart).
-- **Scrub the chart** — dragging a finger across it snaps a crosshair to the
+* **Scrub the chart** — dragging a finger across it snaps a crosshair to the
   nearest point *by time* (binary search on timestamp, not touch-x mapped to a
   list index) and swaps the header's range-change chip for that point's price
   and time; releasing restores the chip. Only a mostly-horizontal drag claims
   the gesture — a vertical one is left for the enclosing scroll view and
   pull-to-refresh, so the chart never traps a scroll that starts on it.
-- **The range row is swipeable, not just tappable** — dragging left/right
+* **The range row is swipeable, not just tappable** — dragging left/right
   anywhere on the 1D/5D/…/Max row moves the selection one range at a time
   (left = forward to a wider range, same direction convention as the app's
   other swipeable tabs). It's a plain drag-gesture detector rather than a
@@ -415,7 +462,7 @@ range is selected. A few things worth knowing about how it actually works:
   each range's data is fetched on demand (not all precomputed up front), so
   there's no fixed set of "pages" to page between — just a selection that
   moves by one step per completed swipe.
-- **Pull-to-refresh** works on the whole screen — same `PullToRefreshBox`
+* **Pull-to-refresh** works on the whole screen — same `PullToRefreshBox`
   pattern as Dashboard and Formation. It's the *only* refresh affordance here
   now; the old standalone "Refresh price" button was removed once pull-to-
   refresh covered the same action, for consistency with those other two
@@ -427,91 +474,112 @@ range is selected. A few things worth knowing about how it actually works:
   article list mean there's often nothing visibly different afterward even
   though it worked.
 
-## Holding news feed
+### Holding news feed
 
 The detail screen shows recent company news from Finnhub's `/company-news`
 endpoint (free tier, same key/throttler). Articles are cached in `news_cache` with
 a 30-min TTL, thumbnails load via Coil, and tapping one opens it in the browser
 (`ACTION_VIEW`). Cash holdings are skipped.
 
-## Design
+## Theming
 
-- **Brand palette** in [`ui/theme`](app/src/main/java/com/golddigger/app/ui/theme)
+* **Brand palette** in [`ui/theme`](app/src/main/java/com/golddigger/app/ui/theme)
   — warm gold primary on money-green accents, full light **and** dark schemes with
   tuned surface tones. `dynamicColor` defaults **off** so the identity is
   consistent (still opt-in per `GoldDiggerTheme` call). Gain/loss colours are
   semantic and live outside the Material scheme (`PortfolioColors`).
-- **Adaptive launcher icon** — a vector gold coin with a green trend line, plus a
+* **Adaptive launcher icon** — a vector gold coin with a green trend line, plus a
   `<monochrome>` layer for Android 13+ themed icons.
-- **Shared components** in
+* **Shared components** in
   [`ui/components`](app/src/main/java/com/golddigger/app/ui/components): `SectionCard`
   (the one card style, readable on both backgrounds), `DeltaChip` (green/red
   gain-loss pill), `ColorDot` (ties a list row to its chart slice), and the
   `GoldDiggerWordmark` lockup.
 
-## Stretch features
-
-The architecture leaves room for: multiple portfolios/accounts, CSV
-import/export, price alerts (WorkManager + notification), dividend tracking,
-multi-currency, and a home-screen widget. None are implemented yet.
-
-## Module layout
-
-```
-core/        constants (SyncConfig, FormationConfig), MarketHours, CashHolding
-data/
-  local/     Room entities, DAOs, relations, migrations
-  remote/    StockPriceApi abstraction, Finnhub impl, RequestThrottler
-  repository/ PortfolioRepository (single source of truth), SyncState
-  settings/  DataStore-backed SyncSettings
-  ocr/       PortfolioPhotoDecoder, TextRecognizerService (ML Kit wrapper)
-domain/      PortfolioCalculator, FormationClassifier, RiskMath,
-             PortfolioOcrParser + pure models
-di/          Hilt modules
-work/        PriceSyncWorker + PriceSyncScheduler
-ui/
-  theme/     brand palette, typography
-  components/ SectionCard, DeltaChip, ColorDot, charts, wordmark
-  dashboard/ formation/ groups/ holding/ importphoto/ settings/   screens + ViewModels
-  navigation/  NavHost + routes; GoldDiggerApp hosts the 4 top-level tabs in a
-               HorizontalPager behind the bottom nav (swipeable)
-```
-
 ## Tests
 
-- **JVM** (`./gradlew testDebugUnitTest`) — `PortfolioCalculatorTest`
-  (including group-allocation % measured against a type's own total — ETF vs.
-  individual-stock — rather than the whole portfolio), `FormationClassifierTest`
-  (role assignment, overrides, line ordering, gap insights, zone sizing),
-  `RiskMathTest` (beta / correlation / volatility), `PortfolioOcrParserTest`
-  (header-anchored and inferred-column table reading, geometry-based row
-  grouping, ticker vs. chrome detection, deriving avg cost from shares/value/gain
-  when there's no direct cost column), `HoldingSortTest`, `RequestThrottlerTest`,
-  `PortfolioRepositoryImplTest` (Turbine + fakes, incl.
-  merge-on-add-to-an-existing-ticker), `GroupsViewModelTest` (Turbine + MockK —
-  stock/ETF group partitioning, per-tab value-descending ordering, empty state),
-  `ImportPortfolioViewModelTest` (MockK — a blank-ticker row is excluded before
-  it ever reaches the repository, a genuine write failure is reported as
-  failed rather than imported, and a row whose position was already committed
-  is reported as imported even when a secondary write fails afterward),
-  `AddEditHoldingViewModelTest` (MockK — switching the Cost/share ↔ Total cost
+Unit (`./gradlew :app:testDebugUnitTest`):
+
+* `PortfolioCalculatorTest` — totals and per-holding math, including
+  group-allocation % measured against a type's own total (ETF vs. individual
+  stock) rather than the whole portfolio
+* `FormationClassifierTest` — role assignment, overrides, line ordering, gap
+  insights, zone sizing
+* `RiskMathTest` — beta / correlation / volatility
+* `PortfolioOcrParserTest` — header-anchored and inferred-column table reading,
+  geometry-based row grouping, ticker vs. chrome detection, deriving avg cost
+  from shares/value/gain when there's no direct cost column
+* `HoldingSortTest` / `RequestThrottlerTest` — holdings-list sorting; the
+  request rate limiter
+* `PortfolioRepositoryImplTest` — Turbine + fakes, incl. merge-on-add-to-an-
+  existing-ticker
+* `GroupsViewModelTest` — Turbine + MockK: stock/ETF group partitioning, per-tab
+  value-descending ordering, empty state
+* `ImportPortfolioViewModelTest` — MockK: a blank-ticker row is excluded before
+  it ever reaches the repository, a genuine write failure is reported as failed
+  rather than imported, and a row whose position was already committed is
+  reported as imported even when a secondary write fails afterward
+* `AddEditHoldingViewModelTest` — MockK: switching the Cost/share ↔ Total cost
   chip converts the typed number instead of just relabeling it; a failure in a
   step after `addHolding` still completes the save without re-running the
   merge-on-add write, while a failure of `addHolding` itself stays retryable
-  with the form's latest values), `RiskMetricsAlignmentTest` (two tickers with only partially-overlapping
-  price-point timestamps; asserts both `sectorCorrelation` and the
-  fallback-beta estimate are computed over the shared timestamp axis rather
-  than paired by raw list index), `PriceRangeTest` (each range's lower-bound
-  timestamp resolves correctly against a fixed "now" — 1D is exactly 24
-  hours back, YTD lands on midnight Jan 1, 1Y is a calendar year not a fixed
-  365-day offset, Max has no lower bound, and the ranges nest narrowest to
-  widest).
-- **Instrumentation** (`./gradlew connectedDebugAndroidTest`) — `MigrationTest`
-  (real v1→v2, v2→v3, v3→v4 and v4→v5 data-survival checks), `GoldDiggerDatabaseTest`
-  (DAO joins, cascade, history/news trimming, role-override + risk-column round
-  trips), `DashboardScreenTest` (Hilt + Compose, fake repository).
+  with the form's latest values
+* `RiskMetricsAlignmentTest` — two tickers with only partially-overlapping
+  price-point timestamps; asserts both `sectorCorrelation` and the fallback-beta
+  estimate are computed over the shared timestamp axis rather than paired by raw
+  list index
+* `PriceRangeTest` — each range's lower-bound timestamp resolves correctly
+  against a fixed "now": 1D is exactly 24 hours back, YTD lands on midnight
+  Jan 1, 1Y is a calendar year not a fixed 365-day offset, Max has no lower
+  bound, and the ranges nest narrowest to widest
 
-## License
+Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
+
+* `MigrationTest` — real v1→v2, v2→v3, v3→v4 and v4→v5 data-survival checks
+* `GoldDiggerDatabaseTest` — DAO joins, cascade, history/news trimming,
+  role-override + risk-column round trips
+* `DashboardScreenTest` — Hilt + Compose, fake repository
+
+## Static analysis & performance
+
+* **Android lint** (`./gradlew :app:lintDebug`) — no errors.
+* **Release build** — `assembleRelease` runs R8 with code and resource shrinking
+  (`isMinifyEnabled` / `isShrinkResources`), the fastest variant to install. It
+  is unsigned; see *Known limitations*.
+
+## Known limitations / TODO
+
+* **Price history is only what the app has synced itself** — Finnhub's free tier
+  has no historical-candles endpoint, so charts are built from the intraday
+  snapshots each sync stores (newest 5,000 per ticker). A fresh install starts
+  with an empty history, and the longer ranges (1M–Max) stay sparse until data
+  accumulates. See [Price history range selector](#price-history-range-selector).
+* **Free-tier rate limit** — Finnhub's `/quote` is single-symbol, so a large
+  portfolio refreshes sequentially through the throttler rather than in one
+  batched call; a 429 shows as a status line, never a silent failure.
+* **No export or backup** — holdings live only in the on-device Room database, so
+  uninstalling the app deletes them.
+* **No release signing config** — `assembleRelease` produces an unsigned APK;
+  distributing a release build needs your own keystore.
+* **Not implemented** — multiple portfolios/accounts, CSV import/export, price
+  alerts (WorkManager + notification), dividend tracking, multi-currency and a
+  home-screen widget. The architecture leaves room for them.
+* **No CI** — a workflow running `testDebugUnitTest` + `lintDebug` +
+  `assembleDebug` would catch regressions.
+
+## Dependencies
+
+AGP 8.13, Kotlin 2.0, KSP, Compose BOM 2024.10, Navigation Compose, Hilt, Room,
+DataStore, WorkManager, Retrofit/OkHttp, `kotlinx.serialization`, Coil, ML Kit
+Text Recognition; JUnit, Turbine, MockK and Truth for tests. Full versions in
+`gradle/libs.versions.toml`.
+
+## Legal
 
 Copyright (c) 2026 phxlin. All rights reserved. This source is published for
 viewing only; it is not licensed for reuse, modification, or redistribution.
+
+GoldDigger is a personal portfolio tracker, not financial advice. Quotes, company
+profiles and news come from [Finnhub](https://finnhub.io) and may be delayed,
+incomplete or wrong; they are subject to Finnhub's own terms. This project is
+not affiliated with or endorsed by Finnhub.
