@@ -89,31 +89,31 @@ derived at runtime from whatever you add.
 
 ## Stack
 
-| Concern | Choice |
-| --- | --- |
-| Language | Kotlin |
-| UI | Jetpack Compose + Material 3, branded gold/green palette (light + dark), themed adaptive launcher icon |
-| Architecture | MVVM + Repository, unidirectional `StateFlow` |
-| DI | Hilt |
-| Persistence | Room (single source of truth — the UI only ever observes Room) |
-| Networking | Retrofit + OkHttp + kotlinx.serialization |
-| Background work | WorkManager (periodic, constraint-aware) |
-| Charts | Compose `Canvas` (interactive pie, scrubbable price-history chart, formation pitch) — no chart library |
-| Images | Coil (news thumbnails only) |
-| OCR | ML Kit Text Recognition (bundled, on-device — no network call, no API key) |
-| Tests | JUnit, Turbine, MockK, Truth, Room `MigrationTestHelper`, Compose UI tests |
+| Concern         | Choice                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| Language        | Kotlin                                                                                                 |
+| UI              | Jetpack Compose + Material 3, branded gold/green palette (light + dark), themed adaptive launcher icon |
+| Architecture    | MVVM + Repository, unidirectional `StateFlow`                                                          |
+| DI              | Hilt                                                                                                   |
+| Persistence     | Room (single source of truth — the UI only ever observes Room)                                         |
+| Networking      | Retrofit + OkHttp + kotlinx.serialization                                                              |
+| Background work | WorkManager (periodic, constraint-aware)                                                               |
+| Charts          | Compose `Canvas` (interactive pie, scrubbable price-history chart, formation pitch) — no chart library |
+| Images          | Coil (news thumbnails only)                                                                            |
+| OCR             | ML Kit Text Recognition (bundled, on-device — no network call, no API key)                             |
+| Tests           | JUnit, Turbine, MockK, Truth, Room `MigrationTestHelper`, Compose UI tests                             |
 
 `applicationId` / `namespace` = `com.golddigger.app` (debug build is
 `.debug`). `minSdk 26`, `compileSdk` / `targetSdk 35`.
 
 ## Toolchain
 
-| | Version |
-| --- | --- |
-| Android Gradle Plugin | 8.13.2 |
-| Gradle wrapper | 8.13 |
-| Kotlin / KSP | 2.0.21 / 2.0.21-1.0.28 |
-| JDK | 17–21 (Gradle 8.13 doesn't support the JDK 25 that recent Android Studio bundles, so point Gradle at a JDK 17–21 — see *Getting it running*) |
+|                       | Version                                                                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android Gradle Plugin | 8.13.2                                                                                                                                       |
+| Gradle wrapper        | 8.13                                                                                                                                         |
+| Kotlin / KSP          | 2.0.21 / 2.0.21-1.0.28                                                                                                                       |
+| JDK                   | 17–21 (Gradle 8.13 doesn't support the JDK 25 that recent Android Studio bundles, so point Gradle at a JDK 17–21 — see *Getting it running*) |
 
 Staying on AGP 8.13.2 is deliberate — AGP 9's built-in-Kotlin feature is not yet
 compatible with KSP, so the "AGP can be upgraded" banner in Studio should be
@@ -251,13 +251,13 @@ for the step-by-step when v6 arrives.
 The **Formation** tab maps every holding onto a pitch so you can read your
 portfolio's *risk shape* at a glance instead of a list.
 
-| Role | Criteria | Zone |
-| --- | --- | --- |
-| **Goalkeeper** | cash / cash-equivalent holdings | bottom |
-| **Defense** | beta `< 0.9` and not correlated to the dominant sector | back third |
-| **Midfield** | beta `0.9–1.5`, or moderate dominant-sector correlation | middle |
-| **Attack** | beta `> 1.5`, high sector correlation, or high realized volatility | front third |
-| **Bench** | no beta / price history yet — shown off-pitch, never guessed | — |
+| Role           | Criteria                                                           | Zone        |
+| -------------- | ------------------------------------------------------------------ | ----------- |
+| **Goalkeeper** | cash / cash-equivalent holdings                                    | bottom      |
+| **Defense**    | beta `< 0.9` and not correlated to the dominant sector             | back third  |
+| **Midfield**   | beta `0.9–1.5`, or moderate dominant-sector correlation            | middle      |
+| **Attack**     | beta `> 1.5`, high sector correlation, or high realized volatility | front third |
+| **Bench**      | no beta / price history yet — shown off-pitch, never guessed       | —           |
 
 Players are laid out like a real lineup: the front line spreads across the top of
 its third, the midfield sits as a flat line, and the keeper stands alone on the
