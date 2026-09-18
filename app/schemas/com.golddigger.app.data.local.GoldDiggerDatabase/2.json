@@ -1,0 +1,432 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "aadfd3371cd9a3ab77d32c48d587f12f",
+    "entities": [
+      {
+        "tableName": "stocks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ticker` TEXT NOT NULL, `companyName` TEXT NOT NULL, `sector` TEXT, PRIMARY KEY(`ticker`))",
+        "fields": [
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "companyName",
+            "columnName": "companyName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sector",
+            "columnName": "sector",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ticker"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "holdings",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ticker` TEXT NOT NULL, `shares` REAL NOT NULL, `costBasis` REAL NOT NULL, `dateAdded` INTEGER NOT NULL, FOREIGN KEY(`ticker`) REFERENCES `stocks`(`ticker`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shares",
+            "columnName": "shares",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "costBasis",
+            "columnName": "costBasis",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dateAdded",
+            "columnName": "dateAdded",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_holdings_ticker",
+            "unique": false,
+            "columnNames": [
+              "ticker"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_holdings_ticker` ON `${TABLE_NAME}` (`ticker`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "stocks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ticker"
+            ],
+            "referencedColumns": [
+              "ticker"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "transactions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ticker` TEXT NOT NULL, `type` TEXT NOT NULL, `shares` REAL NOT NULL, `pricePerShare` REAL NOT NULL, `timestamp` INTEGER NOT NULL, FOREIGN KEY(`ticker`) REFERENCES `stocks`(`ticker`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shares",
+            "columnName": "shares",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pricePerShare",
+            "columnName": "pricePerShare",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_transactions_ticker",
+            "unique": false,
+            "columnNames": [
+              "ticker"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_transactions_ticker` ON `${TABLE_NAME}` (`ticker`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "stocks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ticker"
+            ],
+            "referencedColumns": [
+              "ticker"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "groups",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `targetAllocationPct` REAL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetAllocationPct",
+            "columnName": "targetAllocationPct",
+            "affinity": "REAL",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "stock_group_cross_ref",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ticker` TEXT NOT NULL, `groupId` INTEGER NOT NULL, PRIMARY KEY(`ticker`, `groupId`), FOREIGN KEY(`ticker`) REFERENCES `stocks`(`ticker`) ON UPDATE NO ACTION ON DELETE CASCADE , FOREIGN KEY(`groupId`) REFERENCES `groups`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "groupId",
+            "columnName": "groupId",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ticker",
+            "groupId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_stock_group_cross_ref_groupId",
+            "unique": false,
+            "columnNames": [
+              "groupId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_stock_group_cross_ref_groupId` ON `${TABLE_NAME}` (`groupId`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "stocks",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "ticker"
+            ],
+            "referencedColumns": [
+              "ticker"
+            ]
+          },
+          {
+            "table": "groups",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "groupId"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "price_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ticker` TEXT NOT NULL, `price` REAL NOT NULL, `dayChangePct` REAL NOT NULL, `lastUpdated` INTEGER NOT NULL, PRIMARY KEY(`ticker`))",
+        "fields": [
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "price",
+            "columnName": "price",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dayChangePct",
+            "columnName": "dayChangePct",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUpdated",
+            "columnName": "lastUpdated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ticker"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "price_points",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ticker` TEXT NOT NULL, `price` REAL NOT NULL, `timestamp` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "price",
+            "columnName": "price",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_price_points_ticker_timestamp",
+            "unique": false,
+            "columnNames": [
+              "ticker",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_price_points_ticker_timestamp` ON `${TABLE_NAME}` (`ticker`, `timestamp`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "news_cache",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ticker` TEXT NOT NULL, `id` INTEGER NOT NULL, `headline` TEXT NOT NULL, `summary` TEXT NOT NULL, `source` TEXT NOT NULL, `url` TEXT NOT NULL, `imageUrl` TEXT, `publishedAt` INTEGER NOT NULL, `fetchedAt` INTEGER NOT NULL, PRIMARY KEY(`ticker`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "ticker",
+            "columnName": "ticker",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "headline",
+            "columnName": "headline",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summary",
+            "columnName": "summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "url",
+            "columnName": "url",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageUrl",
+            "columnName": "imageUrl",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "publishedAt",
+            "columnName": "publishedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fetchedAt",
+            "columnName": "fetchedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "ticker",
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'aadfd3371cd9a3ab77d32c48d587f12f')"
+    ]
+  }
+}

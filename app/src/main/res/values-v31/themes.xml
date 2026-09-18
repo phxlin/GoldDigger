@@ -1,0 +1,14 @@
+<resources>
+    <style name="Theme.GoldDigger" parent="android:Theme.Material.Light.NoActionBar">
+        <!--
+          Android 12+ builds a splash screen automatically from the launcher
+          icon, but without this it fills the space around the icon with the
+          theme's plain white background instead of the icon's own brand
+          green — the two don't read as one image. Pinning the splash
+          background to the same green as ic_launcher_background makes the
+          icon look like it's floating on its own colour edge-to-edge instead
+          of sitting in a mismatched white box.
+        -->
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+    </style>
+</resources>

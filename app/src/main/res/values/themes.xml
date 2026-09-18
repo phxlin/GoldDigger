@@ -1,0 +1,7 @@
+<resources>
+    <!--
+      android:windowSplashScreenBackground (API 31+) lives in values-v31/themes.xml
+      instead of here — it doesn't exist below API 31, and minSdk is 26.
+    -->
+    <style name="Theme.GoldDigger" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

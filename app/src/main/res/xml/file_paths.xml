@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backs the FileProvider that hands the system camera app a writable URI
+     for the "import a portfolio photo" flow (see ImportPortfolioViewModel). -->
+<paths>
+    <cache-path name="import_photos" path="import/" />
+</paths>
