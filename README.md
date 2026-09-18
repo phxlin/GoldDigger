@@ -65,7 +65,7 @@ Live quotes, company profiles, ticker search and news all come from
 
 Get a free key at <https://finnhub.io/register>.
 
-### Sample flow (MVP acceptance path)
+### First run
 
 1. First launch shows the empty-state prompt → **Add a holding** (or tap the
    wallet icon to add cash, or the camera icon / *"Or import from a photo"*
@@ -115,7 +115,7 @@ Get a free key at <https://finnhub.io/register>.
 * **Sortable holdings list** — tap the **Symbol / Price / Value** column headers
   to reorder ascending/descending; unpriced rows always sink to the bottom. Each
   row shows the latest per-share price, today's move, market value, gain %, and a
-  colour dot matching its pie slice.
+  color dot matching its pie slice.
 * **Per-holding detail** — big price, today's move, average cost, gain/loss,
   % of portfolio, a [price-history chart with a range selector](#price-history-range-selector),
   group membership, and a [recent-news feed](#holding-news-feed).
@@ -206,6 +206,8 @@ ui/
 | Kotlin / KSP          | 2.0.21 / 2.0.21-1.0.28                                                                                                                 |
 | JDK                   | 17–21 (Gradle 8.13 doesn't support the JDK 25 that recent Android Studio bundles, so point Gradle at a JDK 17–21 — see *Requirements*) |
 
+Every library version is pinned in `gradle/libs.versions.toml`.
+
 Staying on AGP 8.13.2 is deliberate — AGP 9's built-in-Kotlin feature is not yet
 compatible with KSP, so the "AGP can be upgraded" banner in Studio should be
 dismissed.
@@ -238,7 +240,8 @@ numbers elsewhere:
   `maxSymbolsPerQuoteRequest` and the same code packs more per call.
 * **Cache-first.** A price fetched within the active refresh interval is not
   re-fetched, even if several screens ask at once (`SyncConfig.isFresh` + a
-  coalescing `Mutex` in the repository).
+  `Mutex` in the repository that makes overlapping refreshes wait their turn
+  and then find everything already fresh).
 * **Rate-limit UX.** A 429 becomes a calm status line —
   *"Prices from 9:41 AM. Refresh limit reached — next update in ~3 min"* — via
   [`SyncState`](app/src/main/java/com/golddigger/app/data/repository/SyncState.kt)
@@ -246,7 +249,7 @@ numbers elsewhere:
 * **Tunable.** Refresh interval and batch size are user settings (persisted in
   DataStore) so switching to a paid tier needs no code change.
 
-### Offline behaviour
+### Offline behavior
 
 Network results always land in Room first; the UI only observes Room. If a sync
 fails the last `PriceCache` row is still shown, with a relative-time "stale"
@@ -275,8 +278,8 @@ Nothing else changes.
 
 `stocks` (ticker PK; also holds `beta` / `sectorCorrelation` / `riskUpdatedAt`
 for the Formation view and `isEtf`, classifying it as an ETF vs. an individual
-stock) · `holdings` (FK→stocks; also `roleOverride`) · `transactions` (optional
-ledger, BUY/SELL) · `groups` (user buckets, nullable target %, and `isEtfGroup`
+stock) · `holdings` (FK→stocks; also `roleOverride`) · `transactions` (BUY/SELL
+ledger table — in the schema but not used by the app yet) · `groups` (user buckets, nullable target %, and `isEtfGroup`
 classifying the bucket itself as tracking ETFs vs. individual stocks) ·
 `stock_group_cross_ref` (many-to-many) · `price_cache` (last known quote) ·
 `price_points` (rolling history for the [price-history range selector](#price-history-range-selector)
@@ -310,7 +313,7 @@ Players are laid out like a real lineup: the front line spreads across the top o
 its third, the midfield sits as a flat line, and the keeper stands alone on the
 goal line. Within a zone the order and vertical position track how *extreme* each
 holding is for its role — the highest-beta attacker leads the line and rides
-highest, the lowest-beta defender drops deepest — and the chip's colour intensity
+highest, the lowest-beta defender drops deepest — and the chip's color intensity
 echoes the same ranking. Every holding is always shown on the pitch — a line
 caps at four across, like a real back four / front three, and a crowded zone
 just wraps to as many further lines as it needs rather than collapsing anything
@@ -433,13 +436,13 @@ range is selected. A few things worth knowing about how it actually works:
   standing in for history that was never recorded.
 * Each range ([`PriceRange`](app/src/main/java/com/golddigger/app/domain/model/PriceRange.kt),
   Android-free and unit-tested in `PriceRangeTest`) resolves to a lower-bound
-  timestamp *at read time* — "1Y" always means "the last 365 days from now,"
-  not a fixed calendar window — via `PriceDao.observePointsSince`, a new
-  timestamp-filtered query alongside the existing "last N points" one.
-* `PriceDao.trimHistory`'s retention cap was raised from ~120 points/ticker
-  (about a day at the fastest sync interval) to 5,000, so months/years of
-  history can actually accumulate for the longer ranges instead of being
-  silently deleted within a day or two of being written.
+  timestamp *at read time* — "1Y" means the same calendar date one year back
+  (not a fixed 365-day offset) and "YTD" starts at midnight on Jan 1 — via
+  `PriceDao.observePointsSince`, a timestamp-filtered query alongside the
+  "last N points" one.
+* `PriceDao.trimHistory` caps retention at 5,000 points per ticker, so
+  months or years of history can accumulate for the longer ranges instead of
+  being trimmed away within a day or two of being written.
 * The chart itself ([`PriceHistoryChart`](app/src/main/java/com/golddigger/app/ui/components/Charts.kt))
   places points by **elapsed time, not index** — a range with uneven sync
   gaps (a weekend, a stretch with background sync off) renders those gaps
@@ -463,10 +466,8 @@ range is selected. A few things worth knowing about how it actually works:
   there's no fixed set of "pages" to page between — just a selection that
   moves by one step per completed swipe.
 * **Pull-to-refresh** works on the whole screen — same `PullToRefreshBox`
-  pattern as Dashboard and Formation. It's the *only* refresh affordance here
-  now; the old standalone "Refresh price" button was removed once pull-to-
-  refresh covered the same action, for consistency with those other two
-  screens. It refreshes price and news together as two independent
+  pattern as Dashboard and Formation, and the only refresh affordance on this
+  screen. It refreshes price and news together as two independent
   operations, each with its own loading indicator (the pull spinner for
   price, the inline spinner next to "Recent news" for news) rather than one
   waiting on the other — worth knowing that a completed news refresh is easy
@@ -486,7 +487,7 @@ a 30-min TTL, thumbnails load via Coil, and tapping one opens it in the browser
 * **Brand palette** in [`ui/theme`](app/src/main/java/com/golddigger/app/ui/theme)
   — warm gold primary on money-green accents, full light **and** dark schemes with
   tuned surface tones. `dynamicColor` defaults **off** so the identity is
-  consistent (still opt-in per `GoldDiggerTheme` call). Gain/loss colours are
+  consistent (still opt-in per `GoldDiggerTheme` call). Gain/loss colors are
   semantic and live outside the Material scheme (`PortfolioColors`).
 * **Adaptive launcher icon** — a vector gold coin with a green trend line, plus a
   `<monochrome>` layer for Android 13+ themed icons.
@@ -545,7 +546,7 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
 * **Android lint** (`./gradlew :app:lintDebug`) — no errors.
 * **Release build** — `assembleRelease` runs R8 with code and resource shrinking
   (`isMinifyEnabled` / `isShrinkResources`), the fastest variant to install. It
-  is unsigned; see *Known limitations*.
+  is unsigned, so distributing it needs your own keystore.
 
 ## Known limitations / TODO
 
@@ -559,25 +560,15 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
   batched call; a 429 shows as a status line, never a silent failure.
 * **No export or backup** — holdings live only in the on-device Room database, so
   uninstalling the app deletes them.
-* **No release signing config** — `assembleRelease` produces an unsigned APK;
-  distributing a release build needs your own keystore.
 * **Not implemented** — multiple portfolios/accounts, CSV import/export, price
   alerts (WorkManager + notification), dividend tracking, multi-currency and a
   home-screen widget. The architecture leaves room for them.
 * **No CI** — a workflow running `testDebugUnitTest` + `lintDebug` +
   `assembleDebug` would catch regressions.
 
-## Dependencies
-
-AGP 8.13, Kotlin 2.0, KSP, Compose BOM 2024.10, Navigation Compose, Hilt, Room,
-DataStore, WorkManager, Retrofit/OkHttp, `kotlinx.serialization`, Coil, ML Kit
-Text Recognition; JUnit, Turbine, MockK and Truth for tests. Full versions in
-`gradle/libs.versions.toml`.
-
 ## Legal
 
-Copyright (c) 2026 phxlin. All rights reserved. This source is published for
-viewing only; it is not licensed for reuse, modification, or redistribution.
+Copyright (c) 2026 phxlin. All rights reserved.
 
 GoldDigger is a personal portfolio tracker, not financial advice. Quotes, company
 profiles and news come from [Finnhub](https://finnhub.io) and may be delayed,
