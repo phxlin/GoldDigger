@@ -13,11 +13,11 @@ derived at runtime from whatever you add.
   <img src="docs/screenshots/holding-detail.png" alt="Holding detail with price-history chart and 1D to Max range selector" width="230">
 </p>
 <p align="center">
-  <img src="docs/screenshots/groups.png" alt="Groups tab with allocation donut and per-group targets" width="230">
   <img src="docs/screenshots/formation.png" alt="Soccer Formation view assigning holdings to attack, midfield, defense and goalkeeper" width="230">
+  <img src="docs/screenshots/groups.png" alt="Groups tab with allocation donut and per-group targets" width="230">
 </p>
 
-<sub>Portfolio dashboard · allocation chart · holding detail · groups · Formation view (dark theme, Pixel 7 Pro).</sub>
+<sub>Portfolio dashboard · allocation chart · holding detail · Formation view · groups (dark theme, Pixel 7 Pro).</sub>
 
 ## What it does
 
@@ -513,5 +513,5 @@ ui/
 
 ## License
 
-Copyright (c) 2026. All rights reserved. This source is published for viewing
-only; it is not licensed for reuse, modification, or redistribution.
+Copyright (c) 2026 phxlin. All rights reserved. This source is published for
+viewing only; it is not licensed for reuse, modification, or redistribution.
