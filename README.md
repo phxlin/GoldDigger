@@ -221,16 +221,6 @@ Staying on AGP 8.13.2 is deliberate — AGP 9's built-in-Kotlin feature is not y
 compatible with KSP, so the "AGP can be upgraded" banner in Studio should be
 dismissed.
 
-### Where the money math lives
-
-All monetary calculations — gain/loss, allocation %, `amountToTarget` — are pure
-functions in
-[`PortfolioCalculator`](app/src/main/java/com/golddigger/app/domain/PortfolioCalculator.kt),
-with no Android or coroutine dependencies, unit-tested in
-[`PortfolioCalculatorTest`](app/src/test/java/com/golddigger/app/domain/PortfolioCalculatorTest.kt).
-ViewModels never do arithmetic themselves. The holdings-list ordering is likewise
-a pure `sortHoldings()` function, tested in `HoldingSortTest`.
-
 ### Rate limiting & batching (built in from day one)
 
 Everything the throttling story needs is in
@@ -264,7 +254,7 @@ Network results always land in Room first; the UI only observes Room. If a sync
 fails the last `PriceCache` row is still shown, with a relative-time "stale"
 indicator. `PriceCache` exists precisely so there is always something to render.
 
-### Swapping the price provider
+### Changing the price source
 
 The provider is isolated behind
 [`StockPriceApi`](app/src/main/java/com/golddigger/app/data/remote/StockPriceApi.kt).
@@ -283,7 +273,7 @@ Alpha Vantage / Twelve Data / IEX:
 
 Nothing else changes.
 
-### Data model (Room)
+### How your data is stored
 
 `stocks` (ticker PK; also holds `beta` / `sectorCorrelation` / `riskUpdatedAt`
 for the Formation view and `isEtf`, classifying it as an ETF vs. an individual
@@ -304,6 +294,16 @@ columns; `MIGRATION_3_4` added `stocks.isEtf`; `MIGRATION_4_5` added
 `groups.isEtfGroup`. All purely additive. See
 [`Migrations.kt`](app/src/main/java/com/golddigger/app/data/local/Migrations.kt)
 for the step-by-step when v6 arrives.
+
+### Where the money math lives
+
+All monetary calculations — gain/loss, allocation %, `amountToTarget` — are pure
+functions in
+[`PortfolioCalculator`](app/src/main/java/com/golddigger/app/domain/PortfolioCalculator.kt),
+with no Android or coroutine dependencies, unit-tested in
+[`PortfolioCalculatorTest`](app/src/test/java/com/golddigger/app/domain/PortfolioCalculatorTest.kt).
+ViewModels never do arithmetic themselves. The holdings-list ordering is likewise
+a pure `sortHoldings()` function, tested in `HoldingSortTest`.
 
 ### Soccer Formation view
 
@@ -436,7 +436,7 @@ YTD / 1Y / 5Y / Max** range picker, plus a `$change (pct%)` chip for whatever
 range is selected. A few things worth knowing about how it actually works:
 
 * **There's no historical-candles endpoint behind this** (Finnhub's free tier
-  doesn't serve one — see [Swapping the price provider](#swapping-the-price-provider)).
+  doesn't serve one — see [Changing the price source](#changing-the-price-source)).
   Every point on the chart is a real price GoldDigger itself recorded at sync
   time, in the `price_points` table — an intraday snapshot, not a daily close.
   A range only shows real data back as far as the app has actually been
@@ -643,13 +643,13 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`, 15 tests):
   snapshots each sync stores (newest 5,000 per ticker). A fresh install starts
   with an empty history, and the longer ranges (1M–Max) stay sparse until data
   accumulates. See [Price history range selector](#price-history-range-selector).
+* **Backups are manual** — there's no automatic or cloud backup; holdings live in
+    the on-device Room database, so uninstalling deletes them unless you've
+    exported a file first (Settings → Your data). See
+    [Backup & restore](#backup--restore).
 * **Free-tier rate limit** — Finnhub's `/quote` is single-symbol, so a large
   portfolio refreshes sequentially through the throttler rather than in one
   batched call; a 429 shows as a status line, never a silent failure.
-* **Backups are manual** — there's no automatic or cloud backup; holdings live in
-  the on-device Room database, so uninstalling deletes them unless you've
-  exported a file first (Settings → Your data). See
-  [Backup & restore](#backup--restore).
 * **Not implemented** — multiple portfolios/accounts, CSV import/export, price
   alerts (WorkManager + notification), dividend tracking, multi-currency and a
   home-screen widget. The architecture leaves room for them.
