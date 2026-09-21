@@ -22,7 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import javax.inject.Inject
-import kotlin.time.Duration.Companion.minutes
 
 data class SettingsUiState(
     val refreshIntervalMinutes: Int = SyncConfig.DEFAULT_REFRESH_INTERVAL.inWholeMinutes.toInt(),
@@ -76,22 +75,20 @@ class SettingsViewModel @Inject constructor(
 
     fun exportBackup(resolver: ContentResolver, uri: Uri) {
         viewModelScope.launch {
-            _message.value = try {
+            _message.value = runCatching {
                 val json = backupManager.exportJson()
                 withContext(Dispatchers.IO) {
                     resolver.openOutputStream(uri, "wt")?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
                         ?: throw IOException("Couldn't open the file")
                 }
                 "Backup saved."
-            } catch (e: Exception) {
-                "Couldn't save the backup."
-            }
+            }.getOrElse { "Couldn't save the backup." }
         }
     }
 
     fun importBackup(resolver: ContentResolver, uri: Uri) {
         viewModelScope.launch {
-            _message.value = try {
+            _message.value = runCatching {
                 val text = withContext(Dispatchers.IO) {
                     resolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                         ?: throw IOException("Couldn't open the file")
@@ -105,22 +102,18 @@ class SettingsViewModel @Inject constructor(
                 val imported = "Backup imported: ${summary.holdings} ${if (summary.holdings == 1) "holding" else "holdings"}, " +
                     "${summary.groups} ${if (summary.groups == 1) "group" else "groups"}."
                 if (summary.settingsApplied) imported else "$imported Your sync settings couldn't be imported."
-            } catch (e: BackupException) {
-                "Not imported: ${e.message}"
-            } catch (e: Exception) {
-                "Couldn't read that file."
+            }.getOrElse { e ->
+                if (e is BackupException) "Not imported: ${e.message}" else "Couldn't read that file."
             }
         }
     }
 
     fun deleteEverything() {
         viewModelScope.launch {
-            _message.value = try {
+            _message.value = runCatching {
                 backupManager.deleteAll()
                 "All holdings and groups deleted."
-            } catch (e: Exception) {
-                "Couldn't delete your data."
-            }
+            }.getOrElse { "Couldn't delete your data." }
         }
     }
 

@@ -89,7 +89,7 @@ data class PricePointDto(
     val p: Double? = null,
 )
 
-class BackupException(message: String) : Exception(message)
+class BackupException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
 data class ParsedBackup(
     val settings: BackupSettings?,
@@ -149,9 +149,9 @@ object Backup {
         val file = try {
             json.decodeFromString(BackupFile.serializer(), text)
         } catch (e: SerializationException) {
-            throw BackupException("This file isn't a valid GoldDigger backup.")
+            throw BackupException("This file isn't a valid GoldDigger backup.", e)
         } catch (e: IllegalArgumentException) {
-            throw BackupException("This file isn't a valid GoldDigger backup.")
+            throw BackupException("This file isn't a valid GoldDigger backup.", e)
         }
 
         if (file.app != APP_ID) fail("This doesn't look like a GoldDigger backup.")

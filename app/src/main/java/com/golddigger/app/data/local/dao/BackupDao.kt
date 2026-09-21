@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.Flow
 interface BackupDao {
 
     /** True while there is anything an import or delete would replace: a holding or a group. */
-    @Query("SELECT EXISTS(SELECT 1 FROM holdings) OR EXISTS(SELECT 1 FROM groups)")
+    @Query("SELECT EXISTS(SELECT 1 FROM holdings) OR EXISTS(SELECT 1 FROM `groups`)")
     fun observeHasData(): Flow<Boolean>
 
     @Query("SELECT * FROM stocks ORDER BY ticker")
@@ -28,7 +28,7 @@ interface BackupDao {
     @Query("SELECT * FROM holdings ORDER BY id")
     suspend fun holdings(): List<HoldingEntity>
 
-    @Query("SELECT * FROM groups ORDER BY id")
+    @Query("SELECT * FROM `groups` ORDER BY id")
     suspend fun groups(): List<GroupEntity>
 
     @Query("SELECT * FROM stock_group_cross_ref ORDER BY groupId, ticker")
@@ -42,7 +42,7 @@ interface BackupDao {
     @Query("DELETE FROM stocks")
     suspend fun deleteAllStocks()
 
-    @Query("DELETE FROM groups")
+    @Query("DELETE FROM `groups`")
     suspend fun deleteAllGroups()
 
     @Query("DELETE FROM price_points")

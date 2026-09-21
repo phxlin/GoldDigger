@@ -33,7 +33,6 @@ import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -230,13 +229,14 @@ class PortfolioRepositoryImplTest {
         assertThat((state as SyncState.RateLimited).nextAllowedEpochMs).isEqualTo(10_000L + 30_000L)
     }
 
-    private fun epochMs(year: Int, month: Int, day: Int, hour: Int) =
-        ZonedDateTime.of(year, month, day, hour, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
+    /** 15:00 UTC on the given day of September 2026 (11:00 in New York). */
+    private fun sept2026At15Utc(day: Int) =
+        ZonedDateTime.of(2026, 9, day, 15, 0, 0, 0, ZoneOffset.UTC).toInstant().toEpochMilli()
 
     // 2026-09-14 is a Monday: 15:00 UTC is 11:00 in New York, mid-session.
-    private val marketOpenMs = epochMs(2026, 9, 14, 15)
+    private val marketOpenMs = sept2026At15Utc(14)
     // 2026-09-13 is a Sunday.
-    private val marketClosedMs = epochMs(2026, 9, 13, 15)
+    private val marketClosedMs = sept2026At15Utc(13)
 
     @Test
     fun `quotes fetched for a holding deleted mid-sync are not written back`() = runTest {

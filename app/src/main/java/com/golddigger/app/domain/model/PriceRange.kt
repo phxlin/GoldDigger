@@ -29,18 +29,16 @@ enum class PriceRange(val label: String) {
      * since real price-point timestamps are always well after the epoch.
      */
     fun sinceEpochMs(nowEpochMs: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
-        if (this == MAX) return 0L
-        if (this == ONE_DAY) return MarketHours.lastSessionOpenEpochMs(nowEpochMs)
         val now = Instant.ofEpochMilli(nowEpochMs).atZone(zone)
         val since = when (this) {
-            ONE_DAY -> now
+            MAX -> return 0L
+            ONE_DAY -> return MarketHours.lastSessionOpenEpochMs(nowEpochMs)
             FIVE_DAYS -> now.minusDays(5)
             ONE_MONTH -> now.minusMonths(1)
             SIX_MONTHS -> now.minusMonths(6)
             YEAR_TO_DATE -> now.withDayOfYear(1).toLocalDate().atStartOfDay(zone)
             ONE_YEAR -> now.minusYears(1)
             FIVE_YEARS -> now.minusYears(5)
-            MAX -> now
         }
         return since.toInstant().toEpochMilli()
     }

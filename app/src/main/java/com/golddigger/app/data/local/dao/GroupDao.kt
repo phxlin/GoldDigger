@@ -25,15 +25,15 @@ interface GroupDao {
     @Delete
     suspend fun delete(group: GroupEntity)
 
-    @Query("SELECT * FROM groups ORDER BY name")
+    @Query("SELECT * FROM `groups` ORDER BY name")
     fun observeGroups(): Flow<List<GroupEntity>>
 
     @Transaction
-    @Query("SELECT * FROM groups ORDER BY name")
+    @Query("SELECT * FROM `groups` ORDER BY name")
     fun observeGroupsWithStocks(): Flow<List<GroupWithStocks>>
 
     @Transaction
-    @Query("SELECT * FROM groups WHERE id = :id")
+    @Query("SELECT * FROM `groups` WHERE id = :id")
     fun observeGroupWithStocks(id: Long): Flow<GroupWithStocks?>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)

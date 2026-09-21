@@ -102,19 +102,14 @@ class BackupManager @Inject constructor(
 
         // The data above is already committed, so a settings failure is reported
         // as a partial import rather than thrown as if nothing had changed.
-        val settingsApplied = try {
+        val settingsApplied = runCatching {
             parsed.settings?.let { s ->
                 s.refreshIntervalMinutes?.let { settingsRepository.setRefreshIntervalMinutes(it) }
                 s.batchSize?.let { settingsRepository.setBatchSize(it) }
                 s.backgroundSyncEnabled?.let { settingsRepository.setBackgroundSyncEnabled(it) }
                 s.marketHoursOnly?.let { settingsRepository.setMarketHoursOnly(it) }
             }
-            true
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            false
-        }
+        }.onFailure { if (it is CancellationException) throw it }.isSuccess
 
         ImportSummary(holdings = parsed.holdings.size, groups = parsed.groups.size, settingsApplied = settingsApplied)
     }
