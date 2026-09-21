@@ -78,10 +78,11 @@ interface PriceDao {
     )
     suspend fun recentPointsAsc(ticker: String, limit: Int): List<PricePointEntity>
 
-    /** Keep the history table bounded: drop all but the newest [keep] points per ticker. */
+    /** Drops cached quotes for tickers that no longer exist in `stocks`. */
     @Query("DELETE FROM price_cache WHERE ticker NOT IN (SELECT ticker FROM stocks)")
     suspend fun pruneOrphans()
 
+    /** Drops recorded price points for tickers that no longer exist in `stocks`. */
     @Query("DELETE FROM price_points WHERE ticker NOT IN (SELECT ticker FROM stocks)")
     suspend fun prunePointOrphans()
 

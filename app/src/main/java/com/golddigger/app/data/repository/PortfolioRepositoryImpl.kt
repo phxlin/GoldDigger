@@ -406,7 +406,7 @@ class PortfolioRepositoryImpl @Inject constructor(
             existingStock == null ->
                 stockDao.upsert(StockEntity(symbol, name ?: symbol, industry))
             existingStock.companyName == existingStock.ticker && name != null ->
-                stockDao.upsert(existingStock.copy(companyName = name!!, sector = industry ?: existingStock.sector))
+                stockDao.upsert(existingStock.copy(companyName = name, sector = industry ?: existingStock.sector))
             // Already has a real name, but was missing a sector and the
             // profile fetch above (triggered by missingSector) just found
             // one — without this branch that fetched sector is computed
