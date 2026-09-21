@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.golddigger.app.data.local.GoldDiggerDatabase
 import com.golddigger.app.data.local.Migrations
+import com.golddigger.app.data.local.dao.BackupDao
 import com.golddigger.app.data.local.dao.GroupDao
 import com.golddigger.app.data.local.dao.HoldingDao
 import com.golddigger.app.data.local.dao.NewsDao
@@ -38,4 +39,5 @@ object DatabaseModule {
     @Provides fun provideGroupDao(db: GoldDiggerDatabase): GroupDao = db.groupDao()
     @Provides fun providePriceDao(db: GoldDiggerDatabase): PriceDao = db.priceDao()
     @Provides fun provideNewsDao(db: GoldDiggerDatabase): NewsDao = db.newsDao()
+    @Provides fun provideBackupDao(db: GoldDiggerDatabase): BackupDao = db.backupDao()
 }

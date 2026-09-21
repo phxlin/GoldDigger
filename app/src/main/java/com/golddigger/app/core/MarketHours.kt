@@ -1,6 +1,8 @@
 package com.golddigger.app.core
 
 import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -18,9 +20,28 @@ object MarketHours {
 
     fun isMarketOpen(now: ZonedDateTime = ZonedDateTime.now(EXCHANGE_ZONE)): Boolean {
         val nyNow = now.withZoneSameInstant(EXCHANGE_ZONE)
-        val weekday = nyNow.dayOfWeek != DayOfWeek.SATURDAY &&
-            nyNow.dayOfWeek != DayOfWeek.SUNDAY
         val t = nyNow.toLocalTime()
-        return weekday && !t.isBefore(OPEN) && t.isBefore(CLOSE)
+        return isWeekday(nyNow.toLocalDate()) && !t.isBefore(OPEN) && t.isBefore(CLOSE)
     }
+
+    /**
+     * Epoch ms of the most recent regular-session open at or before
+     * [nowEpochMs]: today's 09:30 ET once a weekday has opened, otherwise the
+     * previous weekday's. The Holding Detail "1D" range starts here, so it shows
+     * the latest trading session, including when it's evenings, weekends or
+     * pre-market and nothing is being recorded.
+     */
+    fun lastSessionOpenEpochMs(nowEpochMs: Long): Long {
+        val nyNow = Instant.ofEpochMilli(nowEpochMs).atZone(EXCHANGE_ZONE)
+        var day = nyNow.toLocalDate()
+        if (!isWeekday(day) || nyNow.toLocalTime().isBefore(OPEN)) {
+            do {
+                day = day.minusDays(1)
+            } while (!isWeekday(day))
+        }
+        return day.atTime(OPEN).atZone(EXCHANGE_ZONE).toInstant().toEpochMilli()
+    }
+
+    private fun isWeekday(day: LocalDate) =
+        day.dayOfWeek != DayOfWeek.SATURDAY && day.dayOfWeek != DayOfWeek.SUNDAY
 }

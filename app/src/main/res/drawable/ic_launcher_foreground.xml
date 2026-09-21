@@ -31,19 +31,27 @@
 
     <!-- rising trend line -->
     <path
-        android:pathData="M38,66 L48,54.5 L57,61 L70,44"
+        android:pathData="M42.68,61.27 L50.6,52.16 L58.88,58.14 L70.84,42.5"
         android:strokeColor="#0B5433"
-        android:strokeWidth="7"
+        android:strokeWidth="6.4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
         android:fillColor="#00000000" />
 
     <!-- arrowhead -->
     <path
-        android:pathData="M70,44 L58,44 M70,44 L70,56"
+        android:pathData="M70.84,42.5 L59.8,42.5 M70.84,42.5 L70.84,53.54"
         android:strokeColor="#0B5433"
-        android:strokeWidth="7"
+        android:strokeWidth="6.4"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- shovel handle bar across the tail of the line -->
+    <path
+        android:pathData="M36.52,58.51 L46.09,66.97"
+        android:strokeColor="#0B5433"
+        android:strokeWidth="4.6"
+        android:strokeLineCap="round"
         android:fillColor="#00000000" />
 </vector>

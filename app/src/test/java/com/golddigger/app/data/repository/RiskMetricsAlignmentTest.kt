@@ -13,6 +13,7 @@ import com.golddigger.app.data.local.entity.StockEntity
 import com.golddigger.app.data.local.entity.StockGroupCrossRef
 import com.golddigger.app.data.local.relation.GroupWithStocks
 import com.golddigger.app.data.local.relation.HoldingRow
+import com.golddigger.app.data.UserDataLock
 import com.golddigger.app.data.remote.NewsArticle
 import com.golddigger.app.data.remote.RemoteQuote
 import com.golddigger.app.data.remote.StockMetrics
@@ -75,6 +76,7 @@ class RiskMetricsAlignmentTest {
         override suspend fun oldestUpdateAmong(tickers: List<String>): Long? = null
         override suspend fun insertPoint(point: PricePointEntity) = Unit
         override suspend fun insertPoints(points2: List<PricePointEntity>) = Unit
+        override suspend fun latestPoints(tickers: List<String>): List<PricePointEntity> = emptyList()
         override fun observeRecentPoints(ticker: String, limit: Int): Flow<List<PricePointEntity>> =
             MutableStateFlow(emptyList())
         override fun observePointsSince(ticker: String, sinceEpochMs: Long): Flow<List<PricePointEntity>> =
@@ -158,6 +160,7 @@ class RiskMetricsAlignmentTest {
             newsDao = newsDao,
             api = api,
             throttler = RequestThrottler(maxPermits = 100, windowMillis = 1000, clock = { 0L }, sleep = {}),
+            userDataLock = UserDataLock(),
             settingsRepository = settingsRepository,
             calculator = PortfolioCalculator(),
             formationClassifier = FormationClassifier(),

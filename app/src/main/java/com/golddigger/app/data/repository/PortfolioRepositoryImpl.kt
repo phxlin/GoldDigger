@@ -2,7 +2,9 @@ package com.golddigger.app.data.repository
 
 import com.golddigger.app.core.CashHolding
 import com.golddigger.app.core.FormationConfig
+import com.golddigger.app.core.MarketHours
 import com.golddigger.app.core.SyncConfig
+import com.golddigger.app.data.UserDataLock
 import com.golddigger.app.data.local.dao.GroupDao
 import com.golddigger.app.data.local.dao.HoldingDao
 import com.golddigger.app.data.local.dao.NewsDao
@@ -50,6 +52,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneOffset
 import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
@@ -66,6 +70,7 @@ class PortfolioRepositoryImpl @Inject constructor(
     private val settingsRepository: SettingsRepository,
     private val calculator: PortfolioCalculator,
     private val formationClassifier: FormationClassifier,
+    private val userDataLock: UserDataLock,
     @IoDispatcher private val io: CoroutineDispatcher,
     @Named("epochClock") private val clock: () -> Long,
 ) : PortfolioRepository {
@@ -151,11 +156,17 @@ class PortfolioRepositoryImpl @Inject constructor(
                     toEpochDay = today.toEpochDay(),
                 )
                 if (articles.isNotEmpty()) {
-                    newsDao.upsertAll(
-                        articles.take(SyncConfig.NEWS_MAX_PER_TICKER)
-                            .map { it.toEntity(symbol, now) },
-                    )
-                    newsDao.trim(SyncConfig.NEWS_MAX_PER_TICKER)
+                    userDataLock.withLock<Unit> {
+                        // The holding may have been deleted (or replaced by an import) while
+                        // the request was in flight; don't store news for a ticker that's gone.
+                        if (symbol in holdingDao.distinctTickers()) {
+                            newsDao.upsertAll(
+                                articles.take(SyncConfig.NEWS_MAX_PER_TICKER)
+                                    .map { it.toEntity(symbol, now) },
+                            )
+                            newsDao.trim(SyncConfig.NEWS_MAX_PER_TICKER)
+                        }
+                    }
                 }
             }.onFailure { if (it is RateLimitException) markRateLimited(it) }
         }
@@ -590,21 +601,43 @@ class PortfolioRepositoryImpl @Inject constructor(
         }
     }
 
-    private suspend fun persistQuotes(quotes: List<RemoteQuote>, fetchedAt: Long) {
-        priceDao.upsertAll(
-            quotes.map {
-                PriceCacheEntity(
-                    ticker = it.ticker,
-                    price = it.price,
-                    dayChangePct = it.dayChangePct,
-                    lastUpdated = fetchedAt,
+    private suspend fun persistQuotes(allQuotes: List<RemoteQuote>, fetchedAt: Long) {
+        userDataLock.withLock<Unit> {
+            // The network calls are done and the write phase holds the lock, so what's held
+            // can't change under us any more. A holding deleted (or replaced by an import)
+            // while the quotes were in flight must not get prices written back for it.
+            val held = holdingDao.distinctTickers().toSet()
+            val quotes = allQuotes.filter { it.ticker.uppercase() in held }
+            if (quotes.isEmpty()) return@withLock
+
+            priceDao.upsertAll(
+                quotes.map {
+                    PriceCacheEntity(
+                        ticker = it.ticker,
+                        price = it.price,
+                        dayChangePct = it.dayChangePct,
+                        lastUpdated = fetchedAt,
+                    )
+                },
+            )
+            // While the market is open every sync is a data point (the risk maths pairs
+            // tickers by timestamp). Outside it a quote identical to the last recorded
+            // one adds nothing but a flat stretch to the chart, so only a price that
+            // actually moved, e.g. an after-hours trade, is recorded.
+            val marketOpen = MarketHours.isMarketOpen(Instant.ofEpochMilli(fetchedAt).atZone(ZoneOffset.UTC))
+            val toRecord = if (marketOpen) {
+                quotes
+            } else {
+                val lastPrice = priceDao.latestPoints(quotes.map { it.ticker }).associate { it.ticker to it.price }
+                quotes.filter { lastPrice[it.ticker] != it.price }
+            }
+            if (toRecord.isNotEmpty()) {
+                priceDao.insertPoints(
+                    toRecord.map { PricePointEntity(ticker = it.ticker, price = it.price, timestamp = fetchedAt) },
                 )
-            },
-        )
-        priceDao.insertPoints(
-            quotes.map { PricePointEntity(ticker = it.ticker, price = it.price, timestamp = fetchedAt) },
-        )
-        priceDao.trimHistory()
+                priceDao.trimHistory()
+            }
+        }
     }
 
     private fun markRateLimited(e: RateLimitException) {

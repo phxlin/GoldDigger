@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.material3.Icon
@@ -39,9 +39,9 @@ import com.golddigger.app.ui.settings.SettingsScreen
 import kotlinx.coroutines.launch
 
 private enum class TopLevel(val label: String, val icon: ImageVector) {
-    Dashboard("Portfolio", Icons.Filled.Dashboard),
+    Dashboard("Portfolio", Icons.AutoMirrored.Filled.TrendingUp),
     Formation("Formation", Icons.Filled.SportsSoccer),
-    Groups("Groups", Icons.AutoMirrored.Filled.ShowChart),
+    Groups("Groups", Icons.Filled.Category),
     Settings("Settings", Icons.Filled.Settings),
 }
 

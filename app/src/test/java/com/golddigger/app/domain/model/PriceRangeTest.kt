@@ -19,8 +19,9 @@ class PriceRangeTest {
     }
 
     @Test
-    fun `one day is exactly 24 hours before now`() {
-        val expected = now - 24L * 60 * 60 * 1000
+    fun `one day starts at the latest session open, so a weekend still shows Friday's session`() {
+        // now is a Sunday; Friday 2026-09-11 09:30 in New York (EDT) is 13:30 UTC.
+        val expected = ZonedDateTime.of(2026, 9, 11, 13, 30, 0, 0, zone).toInstant().toEpochMilli()
         assertThat(PriceRange.ONE_DAY.sinceEpochMs(now, zone)).isEqualTo(expected)
     }
 

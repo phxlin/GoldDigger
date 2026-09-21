@@ -35,6 +35,13 @@ interface PriceDao {
     @Insert
     suspend fun insertPoints(points: List<PricePointEntity>)
 
+    /** The most recently recorded point for each of [tickers] that has any. */
+    @Query(
+        "SELECT * FROM price_points WHERE ticker IN (:tickers) AND timestamp = " +
+            "(SELECT MAX(timestamp) FROM price_points p WHERE p.ticker = price_points.ticker)",
+    )
+    suspend fun latestPoints(tickers: List<String>): List<PricePointEntity>
+
     @Query(
         "SELECT * FROM price_points WHERE ticker = :ticker " +
             "ORDER BY timestamp DESC LIMIT :limit",

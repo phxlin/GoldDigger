@@ -3,6 +3,7 @@ package com.golddigger.app.data.local
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import com.golddigger.app.data.local.dao.BackupDao
 import com.golddigger.app.data.local.dao.GroupDao
 import com.golddigger.app.data.local.dao.HoldingDao
 import com.golddigger.app.data.local.dao.NewsDao
@@ -41,6 +42,7 @@ abstract class GoldDiggerDatabase : RoomDatabase() {
     abstract fun groupDao(): GroupDao
     abstract fun priceDao(): PriceDao
     abstract fun newsDao(): NewsDao
+    abstract fun backupDao(): BackupDao
 
     companion object {
         const val VERSION = 5

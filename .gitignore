@@ -13,3 +13,6 @@ local.properties
 *.hprof
 /app/build/
 /app/release/
+*.jks
+*.keystore
+keystore.properties

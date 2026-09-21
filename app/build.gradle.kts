@@ -19,6 +19,14 @@ val finnhubApiKey: String = (localProperties.getProperty("FINNHUB_API_KEY")
     ?: System.getenv("FINNHUB_API_KEY")
     ?: "").trim()
 
+// Release signing comes from an optional, git-ignored keystore.properties in the project root (see
+// keystore.properties.example). Without it, release builds fall back to the debug key so a fresh clone
+// still builds.
+val keystoreProps = Properties().apply {
+    val f = rootProject.file("keystore.properties")
+    if (f.isFile) f.inputStream().use { load(it) }
+}
+
 android {
     namespace = "com.golddigger.app"
     compileSdk = 35
@@ -38,6 +46,19 @@ android {
         buildConfigField("String", "PRICE_API_BASE_URL", "\"https://finnhub.io/api/v1/\"")
     }
 
+    signingConfigs {
+        if (keystoreProps.isNotEmpty()) {
+            create("release") {
+                fun prop(name: String) = keystoreProps.getProperty(name)
+                    ?: throw GradleException("keystore.properties is missing '$name'")
+                storeFile = rootProject.file(prop("storeFile"))
+                storePassword = prop("storePassword")
+                keyAlias = prop("keyAlias")
+                keyPassword = prop("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -49,6 +70,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // Your own key when keystore.properties exists; otherwise the debug key, which is fine for a
+            // sideloaded app and lets `assembleRelease` install on a device.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

@@ -1,5 +1,6 @@
 package com.golddigger.app.domain.model
 
+import com.golddigger.app.core.MarketHours
 import java.time.Instant
 import java.time.ZoneId
 
@@ -8,7 +9,9 @@ import java.time.ZoneId
  * resolved to a lower-bound timestamp at read time via [sinceEpochMs] rather
  * than stored — "1Y" always means "the last 365 days from now," not a fixed
  * calendar window — so the same enum value keeps meaning the same thing as
- * time passes.
+ * time passes. The exception is "1D", which starts at the latest US session
+ * open (see [MarketHours.lastSessionOpenEpochMs]) so it still shows a chart
+ * once the market has closed.
  */
 enum class PriceRange(val label: String) {
     ONE_DAY("1D"),
@@ -27,9 +30,10 @@ enum class PriceRange(val label: String) {
      */
     fun sinceEpochMs(nowEpochMs: Long, zone: ZoneId = ZoneId.systemDefault()): Long {
         if (this == MAX) return 0L
+        if (this == ONE_DAY) return MarketHours.lastSessionOpenEpochMs(nowEpochMs)
         val now = Instant.ofEpochMilli(nowEpochMs).atZone(zone)
         val since = when (this) {
-            ONE_DAY -> now.minusDays(1)
+            ONE_DAY -> now
             FIVE_DAYS -> now.minusDays(5)
             ONE_MONTH -> now.minusMonths(1)
             SIX_MONTHS -> now.minusMonths(6)

@@ -42,6 +42,7 @@ swipeable as well as tappable (dark theme, Pixel 7 Pro):
 
    ```bash
    ./gradlew :app:assembleDebug        # build the APK
+   ./gradlew :app:assembleRelease      # R8-shrunk release APK (debug-signed, see below)
    ./gradlew :app:installDebug         # install on a running device/emulator
    ./gradlew :app:testDebugUnitTest    # JVM unit tests
    ./gradlew :app:connectedDebugAndroidTest   # instrumentation tests (needs a device)
@@ -149,8 +150,14 @@ Get a free key at <https://finnhub.io/register>.
   icon; both stay in sync through one shared `PagerState`.
 * **Sync** — pull-to-refresh plus a periodic `WorkManager` job (interval
   configurable, market-hours-only optional), all through one rate limiter.
+  Outside market hours a price is only recorded to the chart history when it
+  actually moved, so evenings and weekends don't add a flat line.
 * **Offline** — the UI only ever reads Room, so cached prices and news stay
   visible with a staleness indicator when the network is down.
+* **Backup & restore** — Settings → *Your data* exports holdings, groups and
+  price history to a JSON file through the system file picker, imports from one
+  after a confirmation, and can delete everything (you have to type `DELETE` to
+  confirm). See [Backup & restore](#backup--restore).
 
 ## Architecture
 
@@ -159,8 +166,10 @@ single-Activity Compose with Compose Navigation and a bottom navigation bar.
 Room is the single source of truth — the UI only ever observes Room.
 
 ```
-core/        constants (SyncConfig, FormationConfig), MarketHours, CashHolding
+core/        constants (SyncConfig, FormationConfig), MarketHours (open/closed,
+             latest session open), CashHolding
 data/
+  backup/    Backup (JSON format + validation), BackupManager (export / atomic import)
   local/     Room entities, DAOs, relations, migrations
   remote/    StockPriceApi abstraction, Finnhub impl, RequestThrottler
   repository/ PortfolioRepository (single source of truth), SyncState
@@ -434,9 +443,15 @@ range is selected. A few things worth knowing about how it actually works:
   syncing that ticker; a holding added yesterday has nothing to show for "1Y"
   yet. This is honest by design — there's no backfilled or interpolated data
   standing in for history that was never recorded.
+* **No flat lines outside trading hours** — while the US market is open every
+  sync is recorded, but outside it a quote identical to the last recorded one is
+  skipped, so evenings and weekends don't add a long flat stretch. A price that
+  does move after hours (an extended-hours trade) is still recorded.
 * Each range ([`PriceRange`](app/src/main/java/com/golddigger/app/domain/model/PriceRange.kt),
   Android-free and unit-tested in `PriceRangeTest`) resolves to a lower-bound
-  timestamp *at read time* — "1Y" means the same calendar date one year back
+  timestamp *at read time*. "1D" starts at the most recent session open
+  (09:30 New York on the latest weekday; market holidays aren't modelled), so it
+  still shows the last trading session on an evening or weekend. "1Y" means the same calendar date one year back
   (not a fixed 365-day offset) and "YTD" starts at midnight on Jan 1 — via
   `PriceDao.observePointsSince`, a timestamp-filtered query alongside the
   "last N points" one.
@@ -482,6 +497,52 @@ endpoint (free tier, same key/throttler). Articles are cached in `news_cache` wi
 a 30-min TTL, thumbnails load via Coil, and tapping one opens it in the browser
 (`ACTION_VIEW`). Cash holdings are skipped.
 
+### Backup & restore
+
+Settings → **Your data** has *Export backup* and *Import backup*, both through
+the system file picker (no storage permission needed), so the file can go to
+Drive, email, or another device.
+
+* **What's in the file** — everything the user entered or that can't be
+  re-fetched: holdings (cash included, with their ids), stock metadata (name,
+  sector, ETF flag), groups and their members, Formation role overrides, the
+  sync settings, and the recorded price history — the free tier has no
+  historical-candles endpoint, so history can't be rebuilt after a reinstall.
+  Cached quotes, news and beta/correlation are **not** included; they refresh
+  on their own once an import triggers a sync.
+* **Format** — one compact JSON document with `app`, `version` and
+  `exportedAt` headers, written with the `kotlinx.serialization` the app
+  already uses. Price history is grouped per ticker with short keys because it
+  dominates the file size.
+* **Import replaces, and is all-or-nothing** —
+  [`Backup.parse`](app/src/main/java/com/golddigger/app/data/backup/Backup.kt)
+  validates the whole file first (right app, not from a newer version, every
+  list section present so an omitted one can't silently wipe that data,
+  positive shares, no duplicate ids or tickers, every membership pointing at a
+  real stock and group, sane prices) and only then does
+  [`BackupManager`](app/src/main/java/com/golddigger/app/data/backup/BackupManager.kt)
+  wipe and re-insert everything inside a single Room transaction. A rejected
+  file leaves the existing data untouched and the snackbar says why. Sync
+  settings are applied after that transaction commits; if writing them fails,
+  the snackbar reports a partial import rather than a failed one. The
+  confirmation dialog only warns "Replace your data?" (in red) when there are
+  holdings or groups to replace; on an empty install it's a plain "Import this
+  backup?".
+* **Safe next to a sync** — a sync fetches quotes and news over the network and
+  writes them afterwards. Import and delete hold a small
+  [`UserDataLock`](app/src/main/java/com/golddigger/app/data/UserDataLock.kt) around
+  their transaction, and a sync's write phase takes the same lock and re-checks
+  which tickers are still held, so a delete or import that lands mid-sync can't
+  leave prices or news behind for holdings that are gone.
+* **Cash is re-priced** — cash is never quoted, so nothing would re-create its
+  pinned $1 price after an import onto a fresh install; the import writes it.
+* **Delete all data** — the same section has a *Delete all data* row that removes
+  every holding, group and recorded price in one transaction and leaves the sync
+  settings alone. The confirm button stays disabled until you type `DELETE`
+  (any case), so a stray tap can't wipe everything.
+* **Not covered** — automatic or cloud backup: it's a manual export, and the
+  file is plain, unencrypted JSON.
+
 ## Theming
 
 * **Brand palette** in [`ui/theme`](app/src/main/java/com/golddigger/app/ui/theme)
@@ -489,8 +550,9 @@ a 30-min TTL, thumbnails load via Coil, and tapping one opens it in the browser
   tuned surface tones. `dynamicColor` defaults **off** so the identity is
   consistent (still opt-in per `GoldDiggerTheme` call). Gain/loss colors are
   semantic and live outside the Material scheme (`PortfolioColors`).
-* **Adaptive launcher icon** — a vector gold coin with a green trend line, plus a
-  `<monochrome>` layer for Android 13+ themed icons.
+* **Adaptive launcher icon** — a vector gold coin with a green rising trend arrow
+  whose tail carries a short shovel-style handle bar (the same mark is used for the
+  in-app coin), plus a `<monochrome>` layer for Android 13+ themed icons.
 * **Shared components** in
   [`ui/components`](app/src/main/java/com/golddigger/app/ui/components): `SectionCard`
   (the one card style, readable on both backgrounds), `DeltaChip` (green/red
@@ -499,7 +561,7 @@ a 30-min TTL, thumbnails load via Coil, and tapping one opens it in the browser
 
 ## Tests
 
-Unit (`./gradlew :app:testDebugUnitTest`):
+Unit (`./gradlew :app:testDebugUnitTest`, 128 tests):
 
 * `PortfolioCalculatorTest` — totals and per-holding math, including
   group-allocation % measured against a type's own total (ETF vs. individual
@@ -513,7 +575,9 @@ Unit (`./gradlew :app:testDebugUnitTest`):
 * `HoldingSortTest` / `RequestThrottlerTest` — holdings-list sorting; the
   request rate limiter
 * `PortfolioRepositoryImplTest` — Turbine + fakes, incl. merge-on-add-to-an-
-  existing-ticker
+  existing-ticker, and price points being recorded on every sync while the
+  market is open but only when the price moved while it's closed, and quotes or
+  news that arrive for a holding deleted mid-request being dropped
 * `GroupsViewModelTest` — Turbine + MockK: stock/ETF group partitioning, per-tab
   value-descending ordering, empty state
 * `ImportPortfolioViewModelTest` — MockK: a blank-ticker row is excluded before
@@ -525,16 +589,33 @@ Unit (`./gradlew :app:testDebugUnitTest`):
   step after `addHolding` still completes the save without re-running the
   merge-on-add write, while a failure of `addHolding` itself stays retryable
   with the form's latest values
+* `BackupTest` — an exported backup parses back to identical data (cash's `$CASH`
+  ticker and the empty portfolio included), unknown fields are ignored, and
+  every kind of bad file is rejected with its own message: not JSON, empty,
+  another app's backup, missing/newer version, non-positive shares or prices,
+  duplicate ids or tickers, a missing list section, and memberships pointing at
+  a missing stock or group
+* `ImportPromptTest` — the import dialog only warns about replacing data when there is data
+* `DeleteConfirmationTest` — the typed word matches whatever its case or surrounding
+  spaces, and nothing else does
+* `BackupManagerTest` — MockK: an invalid file never reaches the delete calls,
+  a settings failure after the data commits is reported as a partial import,
+  deleting all data clears the user tables but not the settings, and import and
+  delete wait for a sync write that holds the data lock
 * `RiskMetricsAlignmentTest` — two tickers with only partially-overlapping
   price-point timestamps; asserts both `sectorCorrelation` and the fallback-beta
   estimate are computed over the shared timestamp axis rather than paired by raw
   list index
+* `MarketHoursTest` — the open/closed window and the latest session open (today's
+  mid-session and after the close, the previous weekday's pre-market and on a
+  weekend)
 * `PriceRangeTest` — each range's lower-bound timestamp resolves correctly
-  against a fixed "now": 1D is exactly 24 hours back, YTD lands on midnight
+  against a fixed "now": 1D starts at the latest session open (Friday's on a
+  weekend), YTD lands on midnight
   Jan 1, 1Y is a calendar year not a fixed 365-day offset, Max has no lower
   bound, and the ranges nest narrowest to widest
 
-Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
+Instrumented (`./gradlew :app:connectedDebugAndroidTest`, 15 tests):
 
 * `MigrationTest` — real v1→v2, v2→v3, v3→v4 and v4→v5 data-survival checks
 * `GoldDiggerDatabaseTest` — DAO joins, cascade, history/news trimming,
@@ -545,8 +626,15 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
 
 * **Android lint** (`./gradlew :app:lintDebug`) — no errors.
 * **Release build** — `assembleRelease` runs R8 with code and resource shrinking
-  (`isMinifyEnabled` / `isShrinkResources`), the fastest variant to install. It
-  is unsigned, so distributing it needs your own keystore.
+  (`isMinifyEnabled` / `isShrinkResources`), the fastest variant to run. Signing is
+  optional: with a `keystore.properties` in the project root (copy
+  `keystore.properties.example`; it and `*.jks` / `*.keystore` are git-ignored) the
+  release APK is signed with your own key, and without one it falls back to the
+  debug key, so a fresh clone still builds an APK that installs as-is with
+  `adb install app/build/outputs/apk/release/app-release.apk`. The debug key is for
+  local use only, and it differs per machine, so an APK signed on another computer
+  can't update the installed app: export a backup before switching keys or
+  machines, because Android will make you uninstall first.
 
 ## Known limitations / TODO
 
@@ -558,8 +646,10 @@ Instrumented (`./gradlew :app:connectedDebugAndroidTest`):
 * **Free-tier rate limit** — Finnhub's `/quote` is single-symbol, so a large
   portfolio refreshes sequentially through the throttler rather than in one
   batched call; a 429 shows as a status line, never a silent failure.
-* **No export or backup** — holdings live only in the on-device Room database, so
-  uninstalling the app deletes them.
+* **Backups are manual** — there's no automatic or cloud backup; holdings live in
+  the on-device Room database, so uninstalling deletes them unless you've
+  exported a file first (Settings → Your data). See
+  [Backup & restore](#backup--restore).
 * **Not implemented** — multiple portfolios/accounts, CSV import/export, price
   alerts (WorkManager + notification), dividend tracking, multi-currency and a
   home-screen widget. The architecture leaves room for them.
