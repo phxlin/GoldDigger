@@ -40,7 +40,7 @@ import java.time.LocalDate
  * holding's return series and its sector-correlation basket's return series
  * used to be built from two *independently* intersected timestamp sets, so a
  * ticker held over a different date range than its basket-mates could end up
- * paired index-for-index against the wrong calendar days. [sectorCorrelation]
+ * paired index-for-index against the wrong calendar days. `sectorCorrelation`
  * (exercised here through the public [PortfolioRepositoryImpl.refreshRiskMetrics])
  * now builds one shared timestamp axis up front and evaluates both series on
  * it, so this only reads the timestamps every involved ticker actually has.
@@ -76,7 +76,7 @@ class RiskMetricsAlignmentTest {
         override fun observeAll(): Flow<List<PriceCacheEntity>> = MutableStateFlow(emptyList())
         override suspend fun oldestUpdateAmong(tickers: List<String>): Long? = null
         override suspend fun insertPoint(point: PricePointEntity) = Unit
-        override suspend fun insertPoints(points2: List<PricePointEntity>) = Unit
+        override suspend fun insertPoints(points: List<PricePointEntity>) = Unit
         override suspend fun latestPoints(tickers: List<String>): List<PricePointEntity> = emptyList()
         override fun observeRecentPoints(ticker: String, limit: Int): Flow<List<PricePointEntity>> =
             MutableStateFlow(emptyList())

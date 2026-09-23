@@ -79,7 +79,7 @@ class BetaProvenanceTest {
         override fun observeAll(): Flow<List<PriceCacheEntity>> = MutableStateFlow(emptyList())
         override suspend fun oldestUpdateAmong(tickers: List<String>): Long? = null
         override suspend fun insertPoint(point: PricePointEntity) = Unit
-        override suspend fun insertPoints(points2: List<PricePointEntity>) = Unit
+        override suspend fun insertPoints(points: List<PricePointEntity>) = Unit
         override suspend fun latestPoints(tickers: List<String>): List<PricePointEntity> = emptyList()
         override fun observeRecentPoints(ticker: String, limit: Int): Flow<List<PricePointEntity>> =
             MutableStateFlow(emptyList())

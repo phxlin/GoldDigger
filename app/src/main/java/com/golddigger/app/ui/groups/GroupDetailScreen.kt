@@ -2,7 +2,6 @@ package com.golddigger.app.ui.groups
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -113,14 +112,12 @@ fun GroupDetailScreen(
                             when {
                                 amount == null -> "Target ${target.asPlainPercent()}"
                                 amount > 1.0 -> {
-                                    val currentPct = s.allocation?.currentPct ?: 0.0
-                                    val underPct = target - currentPct
+                                    val underPct = target - s.allocation.currentPct
                                     "Add ${amount.asCurrency()} (${underPct.asPlainPercent()}) to reach " +
                                         target.asPlainPercent()
                                 }
                                 amount < -1.0 -> {
-                                    val currentPct = s.allocation?.currentPct ?: 0.0
-                                    val overPct = currentPct - target
+                                    val overPct = s.allocation.currentPct - target
                                     "Over target (${target.asPlainPercent()}) by ${(-amount).asCurrency()} " +
                                         "(${overPct.asPlainPercent()})"
                                 }

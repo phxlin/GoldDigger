@@ -43,7 +43,7 @@ import java.time.ZoneId
  * that simply throws on command. This is what actually proves the fix: a
  * fake that already throws on cue can't catch a real adapter that instead
  * *swallows* the failure into a benign-looking empty response, which is
- * exactly the bug [FinnhubStockPriceApiTest] and this file were added for.
+ * exactly the bug `FinnhubStockPriceApiTest` and this file were added for.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class FinnhubBetaProvenanceIntegrationTest {
@@ -76,7 +76,7 @@ class FinnhubBetaProvenanceIntegrationTest {
         override fun observeAll(): Flow<List<PriceCacheEntity>> = MutableStateFlow(emptyList())
         override suspend fun oldestUpdateAmong(tickers: List<String>): Long? = null
         override suspend fun insertPoint(point: PricePointEntity) = Unit
-        override suspend fun insertPoints(points2: List<PricePointEntity>) = Unit
+        override suspend fun insertPoints(points: List<PricePointEntity>) = Unit
         override suspend fun latestPoints(tickers: List<String>): List<PricePointEntity> = emptyList()
         override fun observeRecentPoints(ticker: String, limit: Int): Flow<List<PricePointEntity>> =
             MutableStateFlow(emptyList())

@@ -150,7 +150,7 @@ class PortfolioRepositoryImpl @Inject constructor(
             }
             runCatching {
                 throttler.acquire()
-                val today = java.time.LocalDate.now()
+                val today = LocalDate.now()
                 val articles = api.fetchCompanyNews(
                     ticker = symbol,
                     fromEpochDay = today.minusDays(SyncConfig.NEWS_LOOKBACK_DAYS).toEpochDay(),
