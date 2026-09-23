@@ -65,6 +65,19 @@ object FormationConfig {
         "media" to "XLC",
     )
 
+    /**
+     * Common bond / fixed-income ETFs, keyed uppercase. The price provider
+     * reports no sector for any fund, so without this a bond ETF would land
+     * in the same "Unclassified" bucket as equity ETFs and end up correlated
+     * against a basket that's overwhelmingly stocks (see
+     * `PortfolioRepositoryImpl`'s sector-correlation basket selection).
+     */
+    val FIXED_INCOME_ETFS: Set<String> = setOf(
+        "BND", "BNDX", "AGG", "AGGU", "TLT", "TLH", "IEF", "IEI", "SHY", "SHV",
+        "LQD", "VCIT", "VCSH", "VCLT", "HYG", "JNK", "MUB", "MBB", "BIV", "BSV",
+        "BLV", "GOVT", "SCHZ", "SCHR", "SCHO", "SPTL", "SPTI", "SPTS", "TIP", "VTIP",
+    )
+
     // --- Role thresholds ------------------------------------------------------
 
     /** Beta at or above this is no longer "Defense" (it moves at least with the market). */
@@ -87,7 +100,28 @@ object FormationConfig {
      */
     const val HIGH_VOLATILITY_STDDEV: Double = 0.035
 
-    /** Fewest price points needed before realized volatility / fallback beta is trusted. */
+    /**
+     * How far past a role threshold above (beta, correlation, volatility)
+     * must land, as a fraction of the threshold's own value, before it's
+     * trusted to push a holding into the more aggressive role — and how far
+     * below [DEFENSE_BETA_MAX] beta must land to be trusted for Defense. A
+     * metric inside this margin is noise-sensitive: e.g. two betas of 1.48
+     * and 1.51 straddling [MIDFIELD_BETA_MAX] are economically almost
+     * identical and shouldn't land in different roles just because one
+     * rounds a hair past a hard cutoff. A value inside the margin resolves
+     * to the more conservative role, or — if nothing else about the holding
+     * clears a threshold either — Bench, same as any other "not enough
+     * signal to place confidently" case.
+     */
+    const val ROLE_THRESHOLD_MARGIN_FRACTION: Double = 0.10
+
+    /**
+     * Fewest data points needed before an estimate is trusted: intraday
+     * price points for realized volatility, but trading *days* of overlap
+     * for beta/correlation (see `PortfolioRepositoryImpl.dailyClosesByTicker`)
+     * — a handful of points from one session isn't enough to say two assets
+     * move together.
+     */
     const val MIN_POINTS_FOR_ESTIMATE: Int = 12
 
     /** Trailing window (in days) for the dominant-sector correlation estimate. */
@@ -106,6 +140,14 @@ object FormationConfig {
 
     /** Attack above this share of *non-cash* value triggers the "front-loaded" callout. */
     const val ATTACK_HEAVY_NONCASH_PCT: Double = 60.0
+
+    /**
+     * Midfield at or above this share of the *whole* portfolio triggers the
+     * informational "mostly market-like" note — not a warning, since a
+     * heavily market-like book (a core index-fund position, say) can be
+     * entirely intentional.
+     */
+    const val MIDFIELD_HEAVY_PCT: Double = 70.0
 
     // --- Pitch layout ----------------------------------------------------
 

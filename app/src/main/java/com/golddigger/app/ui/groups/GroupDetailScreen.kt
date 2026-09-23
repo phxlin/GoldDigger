@@ -112,10 +112,19 @@ fun GroupDetailScreen(
                         Text(
                             when {
                                 amount == null -> "Target ${target.asPlainPercent()}"
-                                amount > 1.0 ->
-                                    "Add ${amount.asCurrency()} to reach ${target.asPlainPercent()}"
-                                amount < -1.0 -> "Over target by ${(-amount).asCurrency()}"
-                                else -> "On target"
+                                amount > 1.0 -> {
+                                    val currentPct = s.allocation?.currentPct ?: 0.0
+                                    val underPct = target - currentPct
+                                    "Add ${amount.asCurrency()} (${underPct.asPlainPercent()}) to reach " +
+                                        target.asPlainPercent()
+                                }
+                                amount < -1.0 -> {
+                                    val currentPct = s.allocation?.currentPct ?: 0.0
+                                    val overPct = currentPct - target
+                                    "Over target (${target.asPlainPercent()}) by ${(-amount).asCurrency()} " +
+                                        "(${overPct.asPlainPercent()})"
+                                }
+                                else -> "On target (${target.asPlainPercent()})"
                             },
                             style = MaterialTheme.typography.bodyMedium,
                         )

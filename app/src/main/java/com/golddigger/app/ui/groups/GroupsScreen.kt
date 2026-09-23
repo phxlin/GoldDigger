@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -226,10 +227,12 @@ private fun GroupCard(allocation: GroupAllocation, onClick: () -> Unit) {
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "${allocation.tickers.size} holding(s) · ${allocation.currentPct.asPlainPercent()} of " +
+            "${tickerPreview(allocation.tickers)} · ${allocation.currentPct.asPlainPercent()} of " +
                 if (allocation.isEtfGroup) "your ETFs" else "your individual stocks",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         val target = allocation.targetPct
         if (target != null) {
@@ -243,14 +246,34 @@ private fun GroupCard(allocation: GroupAllocation, onClick: () -> Unit) {
             Text(
                 text = when {
                     amount == null -> "Target ${target.asPlainPercent()}"
-                    amount > 1.0 -> "Add ${amount.asCurrency()} to reach ${target.asPlainPercent()}"
-                    amount < -1.0 -> "Over target by ${(-amount).asCurrency()}"
+                    amount > 1.0 -> {
+                        val underPct = target - allocation.currentPct
+                        "Add ${amount.asCurrency()} (${underPct.asPlainPercent()}) to reach " +
+                            target.asPlainPercent()
+                    }
+                    amount < -1.0 -> {
+                        val overPct = allocation.currentPct - target
+                        "Over target (${target.asPlainPercent()}) by ${(-amount).asCurrency()} " +
+                            "(${overPct.asPlainPercent()})"
+                    }
                     else -> "On target (${target.asPlainPercent()})"
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
         }
     }
+}
+
+/**
+ * A one-line, space-conscious stand-in for "N holding(s)": the tickers
+ * themselves when there are few enough to fit, otherwise the first few plus
+ * a "+N more" tail — still a single glance, but showing what's actually in
+ * the bucket instead of just how many things are.
+ */
+private fun tickerPreview(tickers: List<String>, maxShown: Int = 4): String = when {
+    tickers.isEmpty() -> "No holdings"
+    tickers.size <= maxShown -> tickers.joinToString(", ")
+    else -> tickers.take(maxShown).joinToString(", ") + " +${tickers.size - maxShown} more"
 }
 
 @Composable

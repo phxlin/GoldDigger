@@ -42,6 +42,14 @@ object MarketHours {
         return day.atTime(OPEN).atZone(EXCHANGE_ZONE).toInstant().toEpochMilli()
     }
 
+    /**
+     * The exchange-local calendar date [epochMs] falls on — used to align
+     * price points to trading days rather than exact sync timestamps (see
+     * `PortfolioRepositoryImpl`'s beta/correlation estimates).
+     */
+    fun sessionDate(epochMs: Long): LocalDate =
+        Instant.ofEpochMilli(epochMs).atZone(EXCHANGE_ZONE).toLocalDate()
+
     private fun isWeekday(day: LocalDate) =
         day.dayOfWeek != DayOfWeek.SATURDAY && day.dayOfWeek != DayOfWeek.SUNDAY
 }

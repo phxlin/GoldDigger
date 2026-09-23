@@ -79,6 +79,11 @@ class FormationClassifier @Inject constructor() {
     /**
      * The computed (pre-override) role. Order of checks matters: the most
      * aggressive classification that fits wins.
+     *
+     * Every comparison against a [FormationConfig] threshold goes through
+     * [clears]/[under] rather than a bare `>=`/`<`, so a metric within
+     * [FormationConfig.ROLE_THRESHOLD_MARGIN_FRACTION] of a cutoff doesn't
+     * decide anything on its own — see that constant for why.
      */
     fun autoRole(holding: HoldingValuation, risk: RiskProfile): FormationRole {
         if (holding.isCash()) return FormationRole.GOALKEEPER
@@ -88,27 +93,38 @@ class FormationClassifier @Inject constructor() {
         val corr = risk.sectorCorrelation
         val vol = risk.realizedVolatility
 
-        val highCorr = corr != null && corr >= FormationConfig.MODERATE_CORRELATION_MAX
-        val moderateCorr = corr != null &&
-            corr >= FormationConfig.LOW_CORRELATION_MAX &&
-            corr < FormationConfig.MODERATE_CORRELATION_MAX
-        val highVol = vol != null && vol >= FormationConfig.HIGH_VOLATILITY_STDDEV
+        val highBeta = beta != null && clears(beta, FormationConfig.MIDFIELD_BETA_MAX)
+        val marketBeta = beta != null && clears(beta, FormationConfig.DEFENSE_BETA_MAX)
+        val lowBeta = beta != null && under(beta, FormationConfig.DEFENSE_BETA_MAX)
+
+        val highCorr = corr != null && clears(corr, FormationConfig.MODERATE_CORRELATION_MAX)
+        val moderateCorr = corr != null && !highCorr && clears(corr, FormationConfig.LOW_CORRELATION_MAX)
+        val highVol = vol != null && clears(vol, FormationConfig.HIGH_VOLATILITY_STDDEV)
 
         // Attack: amplifies the market, moves with the dominant sector, or just swings hard.
-        if ((beta != null && beta > FormationConfig.MIDFIELD_BETA_MAX) || highCorr || highVol) {
+        if (highBeta || highCorr || highVol) {
             return FormationRole.ATTACK
         }
         // Midfield: roughly market-like, or partly tied to the dominant sector.
-        if ((beta != null && beta >= FormationConfig.DEFENSE_BETA_MAX) || moderateCorr) {
+        if (marketBeta || moderateCorr) {
             return FormationRole.MIDFIELD
         }
         // Defense: demonstrably low beta and not pulled around by the dominant sector.
-        if (beta != null && beta < FormationConfig.DEFENSE_BETA_MAX) {
+        if (lowBeta) {
             return FormationRole.DEFENSE
         }
-        // Some signal, but not enough to place confidently (e.g. only a low vol reading).
+        // Some signal, but not enough to place confidently (e.g. only a low vol
+        // reading, or a beta sitting in the no-man's-land between thresholds).
         return FormationRole.BENCH
     }
+
+    /** True once [value] clears [threshold] by more than the configured margin. */
+    private fun clears(value: Double, threshold: Double): Boolean =
+        value > threshold * (1.0 + FormationConfig.ROLE_THRESHOLD_MARGIN_FRACTION)
+
+    /** True once [value] is convincingly under [threshold], by more than the configured margin. */
+    private fun under(value: Double, threshold: Double): Boolean =
+        value < threshold * (1.0 - FormationConfig.ROLE_THRESHOLD_MARGIN_FRACTION)
 
     // --- Dominant sector --------------------------------------------------
 
@@ -262,6 +278,22 @@ class FormationClassifier @Inject constructor() {
                 body = "Attack alone is ${pct(attackNonCashPct)} of your non-cash holdings — " +
                     "$sector would hit most of your lineup at once.",
                 severity = InsightSeverity.WARNING,
+            )
+        }
+
+        // 4. Mostly market-like — informational, not a warning: no growth tilt
+        // or downside hedge either way. That might be exactly the point (a
+        // core index-fund book, say), so this is just a fact to notice, not
+        // an implied verdict that something's wrong.
+        val midfieldPct = midfield?.valueSharePct ?: 0.0
+        if (midfieldPct >= FormationConfig.MIDFIELD_HEAVY_PCT) {
+            insights += FormationInsight(
+                id = "mostly-midfield",
+                headline = "Mostly market-like",
+                body = "${pct(midfieldPct)} of your portfolio doesn't lean toward growth or " +
+                    "protection either way. That might be exactly the point — a core index " +
+                    "book, say — but it's worth knowing if you expected more of a tilt.",
+                severity = InsightSeverity.INFO,
             )
         }
 

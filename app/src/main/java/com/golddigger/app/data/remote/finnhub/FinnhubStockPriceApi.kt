@@ -9,6 +9,7 @@ import com.golddigger.app.data.remote.StockPriceApi
 import com.golddigger.app.data.remote.StockMetrics
 import com.golddigger.app.data.remote.StockProfile
 import com.golddigger.app.data.remote.SymbolSearchResult
+import kotlinx.coroutines.CancellationException
 import retrofit2.HttpException
 import java.io.IOException
 import java.time.LocalDate
@@ -57,10 +58,22 @@ class FinnhubStockPriceApi @Inject constructor(
 
     override suspend fun fetchMetrics(ticker: String): StockMetrics {
         if (apiKey.isBlank()) return StockMetrics()
-        // Best-effort: `stock/metric` is on Finnhub's free tier, but swallow any
-        // failure (403 on some plans, network) — beta is enrichment, not core.
-        val dto = runCatching { service.metric(ticker.trim().uppercase()) }.getOrNull()
-        val beta = dto?.metric?.beta?.takeIf { it.isFinite() && it != 0.0 }
+        // `stock/metric` is on Finnhub's free tier and a ticker legitimately
+        // having no beta (StockMetrics(beta = null)) is a normal, successful
+        // response — but a genuine fetch failure (403 on some plans, network,
+        // rate limit) must propagate rather than be swallowed into that same
+        // shape. The repository tells the two apart to decide whether a
+        // previously cached provider beta is worth keeping across this call;
+        // collapsing them here made every outage look like "the provider has
+        // no beta", silently discarding a good cached value.
+        val dto = try {
+            service.metric(ticker.trim().uppercase())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            throw e.toDomain()
+        }
+        val beta = dto.metric.beta?.takeIf { it.isFinite() && it != 0.0 }
         return StockMetrics(beta = beta)
     }
 

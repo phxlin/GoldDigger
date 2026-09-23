@@ -121,9 +121,16 @@ class GoldDiggerDatabaseTest {
     @Test
     fun riskColumnsRoundTrip() = runTest {
         db.stockDao().upsert(StockEntity("NVDA", "NVIDIA", "Semiconductors"))
-        db.stockDao().updateRisk("NVDA", beta = 1.8, sectorCorrelation = 0.72, updatedAt = 123L)
+        db.stockDao().updateRisk(
+            "NVDA",
+            beta = 1.8,
+            betaIsEstimate = false,
+            sectorCorrelation = 0.72,
+            updatedAt = 123L,
+        )
         val stock = db.stockDao().findByTicker("NVDA")!!
         assertThat(stock.beta).isEqualTo(1.8)
+        assertThat(stock.betaIsEstimate).isFalse()
         assertThat(stock.sectorCorrelation).isEqualTo(0.72)
         assertThat(stock.riskUpdatedAt).isEqualTo(123L)
     }

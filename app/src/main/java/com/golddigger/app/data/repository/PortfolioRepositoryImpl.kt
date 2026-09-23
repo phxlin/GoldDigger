@@ -53,6 +53,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 import javax.inject.Inject
 import javax.inject.Named
@@ -249,6 +250,12 @@ class PortfolioRepositoryImpl @Inject constructor(
                 if (heldTickers.isEmpty()) return@runCatching
 
                 val stocks = stockDao.all().associateBy { it.ticker }
+                // Backfill: same reasoning as addHolding's sector fallback,
+                // for bond ETFs added before this existed.
+                stocks.values
+                    .filter { it.sector == null && it.ticker in FormationConfig.FIXED_INCOME_ETFS }
+                    .forEach { stockDao.upsert(it.copy(sector = "Fixed Income")) }
+
                 val summary = observePortfolio().first()
                 val sharesByTicker = summary.holdings
                     .filterNot { CashHolding.isCashTicker(it.ticker) }
@@ -275,20 +282,38 @@ class PortfolioRepositoryImpl @Inject constructor(
                     if (fresh) continue
 
                     throttler.acquire()
-                    val providerBeta = runCatching { api.fetchMetrics(ticker).beta }
+                    val metrics = runCatching { api.fetchMetrics(ticker) }
                         .onFailure { if (it is RateLimitException) throw it }
-                        .getOrNull()
-                    val beta = providerBeta
-                        ?: stock.beta
-                        ?: fallbackBeta(ticker, pointsByTicker, sharesByTicker)
+                    val providerBeta = metrics.getOrNull()?.beta
+                    // Only a beta this app previously confirmed came from the
+                    // provider is worth keeping across a failed fetch this
+                    // cycle (a transient outage) — stock.beta with
+                    // betaIsEstimate != false covers both a locally-estimated
+                    // value and a pre-migration row of unknown provenance,
+                    // neither of which should be trusted indefinitely; both
+                    // are recomputed fresh below instead, since the estimate
+                    // is a pure, cheap, no-network calculation anyway.
+                    val (beta, betaIsEstimate) = when {
+                        providerBeta != null -> providerBeta to false
+                        metrics.isFailure && stock.betaIsEstimate == false && stock.beta != null ->
+                            stock.beta to false
+                        else ->
+                            fallbackBeta(ticker, pointsByTicker, sharesByTicker) to true
+                    }
+                    // Not falling back to stock.sectorCorrelation here: unlike
+                    // beta, this never touches the network, so a null result
+                    // means "not enough trading-day history yet" rather than a
+                    // transient failure — keeping a stale value would leave a
+                    // holding like a low-beta bond ETF stuck on a one-session
+                    // correlation reading for weeks.
                     val correlation = sectorCorrelation(
                         ticker = ticker,
                         basketTickers = basketTickers - ticker,
                         pointsByTicker = pointsByTicker,
                         sharesByTicker = sharesByTicker,
-                    ) ?: stock.sectorCorrelation
+                    )
 
-                    stockDao.updateRisk(ticker, beta, correlation, now)
+                    stockDao.updateRisk(ticker, beta, betaIsEstimate, correlation, now)
                 }
             }.onFailure { if (it is RateLimitException) markRateLimited(it) }
         }
@@ -305,15 +330,16 @@ class PortfolioRepositoryImpl @Inject constructor(
         sharesByTicker: Map<String, Double>,
     ): Double? {
         val marketTickers = sharesByTicker.keys
-        // Asset and benchmark series must share one timestamp axis: computing
-        // each side's "common timestamps" independently (over a different set
-        // of tickers) can yield lists of a different length, or the same
-        // length but different actual sync moments — RiskMath then pairs them
-        // by list index, so an axis mismatch silently corrupts the estimate.
-        val timestamps = commonTimestamps(marketTickers + ticker, pointsByTicker)
-        if (timestamps.size < FormationConfig.MIN_POINTS_FOR_ESTIMATE) return null
-        val assetSeries = seriesAt(timestamps, setOf(ticker), pointsByTicker, mapOf(ticker to 1.0))
-        val marketSeries = seriesAt(timestamps, marketTickers, pointsByTicker, sharesByTicker)
+        val dailyByTicker = dailyClosesByTicker(marketTickers + ticker, pointsByTicker)
+        // Asset and benchmark series must share one date axis: computing each
+        // side's "common dates" independently (over a different set of
+        // tickers) can yield lists of a different length, or the same length
+        // but different actual trading days — RiskMath then pairs them by
+        // list index, so an axis mismatch silently corrupts the estimate.
+        val dates = commonDates(marketTickers + ticker, dailyByTicker)
+        if (dates.size < FormationConfig.MIN_POINTS_FOR_ESTIMATE) return null
+        val assetSeries = seriesAt(dates, setOf(ticker), dailyByTicker, mapOf(ticker to 1.0))
+        val marketSeries = seriesAt(dates, marketTickers, dailyByTicker, sharesByTicker)
         return RiskMath.beta(RiskMath.returns(assetSeries), RiskMath.returns(marketSeries))
     }
 
@@ -324,44 +350,59 @@ class PortfolioRepositoryImpl @Inject constructor(
         sharesByTicker: Map<String, Double>,
     ): Double? {
         if (basketTickers.isEmpty()) return null
-        val timestamps = commonTimestamps(basketTickers + ticker, pointsByTicker)
-        if (timestamps.size < FormationConfig.MIN_POINTS_FOR_ESTIMATE) return null
-        val assetSeries = seriesAt(timestamps, setOf(ticker), pointsByTicker, mapOf(ticker to 1.0))
-        val basketSeries = seriesAt(timestamps, basketTickers, pointsByTicker, sharesByTicker)
+        val dailyByTicker = dailyClosesByTicker(basketTickers + ticker, pointsByTicker)
+        val dates = commonDates(basketTickers + ticker, dailyByTicker)
+        if (dates.size < FormationConfig.MIN_POINTS_FOR_ESTIMATE) return null
+        val assetSeries = seriesAt(dates, setOf(ticker), dailyByTicker, mapOf(ticker to 1.0))
+        val basketSeries = seriesAt(dates, basketTickers, dailyByTicker, sharesByTicker)
         return RiskMath.correlation(RiskMath.returns(assetSeries), RiskMath.returns(basketSeries))
     }
 
-    /** Timestamps where *every* one of [tickers] has a price point, sorted. */
-    private fun commonTimestamps(
+    /**
+     * Each of [tickers]' last recorded price on each trading day it has one.
+     * Beta/correlation are measured on this daily axis rather than raw sync
+     * timestamps so they reflect day-over-day moves: aligning on exact ticks
+     * lets one session's shared intraday drift look like a strong
+     * relationship even between assets with nothing really in common (see the
+     * BNDX/bond-ETF sector-correlation investigation this rule replaces).
+     */
+    private fun dailyClosesByTicker(
         tickers: Set<String>,
         pointsByTicker: Map<String, List<PricePointEntity>>,
-    ): List<Long> {
+    ): Map<String, Map<LocalDate, Double>> =
+        tickers.associateWith { t ->
+            pointsByTicker[t].orEmpty()
+                .groupBy { MarketHours.sessionDate(it.timestamp) }
+                .mapValues { (_, points) -> points.maxBy { it.timestamp }.price }
+        }
+
+    /** Trading days where *every* one of [tickers] has a daily close, sorted. */
+    private fun commonDates(
+        tickers: Set<String>,
+        dailyByTicker: Map<String, Map<LocalDate, Double>>,
+    ): List<LocalDate> {
         if (tickers.isEmpty()) return emptyList()
         return tickers
-            .map { t -> pointsByTicker[t].orEmpty().map { it.timestamp }.toSet() }
+            .map { t -> dailyByTicker[t].orEmpty().keys }
             .reduce { acc, keys -> acc intersect keys }
             .sorted()
     }
 
     /**
-     * The weighted sum `Σ price(t) · weight` for [tickers] at each of
-     * [timestamps] — always called with the *same* [timestamps] for both
-     * sides of a beta/correlation estimate, so the resulting series are
-     * paired by index at the same point in time, not just by length.
+     * The weighted sum `Σ close(d) · weight` for [tickers] at each of
+     * [dates] — always called with the *same* [dates] for both sides of a
+     * beta/correlation estimate, so the resulting series are paired by index
+     * on the same trading day, not just by length.
      */
     private fun seriesAt(
-        timestamps: List<Long>,
+        dates: List<LocalDate>,
         tickers: Set<String>,
-        pointsByTicker: Map<String, List<PricePointEntity>>,
+        dailyByTicker: Map<String, Map<LocalDate, Double>>,
         weightByTicker: Map<String, Double>,
-    ): List<Double> {
-        val priceMaps = tickers.associateWith { t ->
-            pointsByTicker[t].orEmpty().associate { it.timestamp to it.price }
+    ): List<Double> =
+        dates.map { d ->
+            tickers.sumOf { t -> (dailyByTicker[t]?.get(d) ?: 0.0) * (weightByTicker[t] ?: 1.0) }
         }
-        return timestamps.map { ts ->
-            tickers.sumOf { t -> (priceMaps[t]?.get(ts) ?: 0.0) * (weightByTicker[t] ?: 1.0) }
-        }
-    }
 
     override suspend fun searchSymbols(query: String): Result<List<SymbolSearchResult>> =
         withContext(io) {
@@ -400,6 +441,11 @@ class PortfolioRepositoryImpl @Inject constructor(
                 name = profile.companyName ?: name
                 industry = profile.sector ?: industry
             }
+        }
+        // The provider never returns a sector for funds; without this a bond
+        // ETF would fall into the same bucket as equity ETFs below.
+        if (industry == null && symbol in FormationConfig.FIXED_INCOME_ETFS) {
+            industry = "Fixed Income"
         }
 
         when {

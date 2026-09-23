@@ -80,7 +80,7 @@ Get a free key at <https://finnhub.io/register>.
 5. Open the holding → **Groups** → create/assign a group like `AI/Semis` with a
    target %.
 6. The Groups tab now shows that bucket's actual vs. target allocation and
-   *"Add $X to reach 40%"*.
+   *"Add $X (5.2%) to reach 40%"*.
 7. Open the **Formation** tab: the holding is placed on the pitch by its beta
    (Attack / Midfield / Defense) or as the Goalkeeper if it's cash. Long-press a
    player chip to pin its role by hand.
@@ -126,10 +126,16 @@ Get a free key at <https://finnhub.io/register>.
   tab is split the same way as the Dashboard — swipeable, one `HorizontalPager`
   page per type — with a group's current/target % measured as a share of that
   type's own total, not the whole portfolio, so a stocks-type group and an
-  ETF-type group each have an independent 100%. The membership picker on a
-  group's detail screen only offers holdings matching that group's own type,
-  so an ETF can't end up inflating a stocks-type group's percentage (or vice
-  versa). Within each tab, groups are ordered by current value, largest first.
+  ETF-type group each have an independent 100%. The membership picker — on a
+  group's own detail screen *and* on a holding's detail screen — only offers
+  matches for the other side's type, so an ETF can't end up inflating a
+  stocks-type group's percentage (or vice versa) from either direction. A
+  membership that predates this rule still shows up so there's a way to undo
+  it, even if its type no longer matches. Within each tab, groups are ordered
+  by current value, largest first; each card shows the actual tickers (not
+  just a count) and, once a target's set, "Add $X (Z%) to reach Y%" / "Over
+  target (Y%) by $X (Z%)" / "On target (Y%)" — the same wording a group's own
+  detail screen shows for itself.
   Each tab also opens with a donut
   chart of that type's groups by dollar value (one slice per group, center
   shows the total currently in groups), same chart component as the Dashboard's
@@ -141,9 +147,11 @@ Get a free key at <https://finnhub.io/register>.
 * **Formation** — your holdings arranged on a soccer pitch by *risk role*
   (goalkeeper = cash, defense = low beta, midfield = market-like, attack = high
   beta / sector-correlated / volatile). Zone height tracks the dollars in the
-  zone; automated "gap" callouts flag a thin defense, an over-large cash keeper,
-  or a front-loaded lineup. Roles are computed from live metrics and can be
-  manually overridden per holding. See [Soccer Formation view](#soccer-formation-view).
+  zone; automated callouts warn about a thin defense, an over-large cash keeper,
+  or a front-loaded lineup, plus an informational note (not a warning) when the
+  book is mostly market-like with no real tilt either way. Roles are computed
+  from live metrics and can be manually overridden per holding. See
+  [Soccer Formation view](#soccer-formation-view).
 * **Swipeable tabs** — the four top-level screens (Portfolio, Formation,
   Groups, Settings) live in a `HorizontalPager` behind the bottom nav, so a
   left/right swipe anywhere on a screen switches tabs the same as tapping an
@@ -275,9 +283,9 @@ Nothing else changes.
 
 ### How your data is stored
 
-`stocks` (ticker PK; also holds `beta` / `sectorCorrelation` / `riskUpdatedAt`
-for the Formation view and `isEtf`, classifying it as an ETF vs. an individual
-stock) · `holdings` (FK→stocks; also `roleOverride`) · `transactions` (BUY/SELL
+`stocks` (ticker PK; also holds `beta` / `betaIsEstimate` / `sectorCorrelation` /
+`riskUpdatedAt` for the Formation view and `isEtf`, classifying it as an ETF vs.
+an individual stock) · `holdings` (FK→stocks; also `roleOverride`) · `transactions` (BUY/SELL
 ledger table — in the schema but not used by the app yet) · `groups` (user buckets, nullable target %, and `isEtfGroup`
 classifying the bucket itself as tracking ETFs vs. individual stocks) ·
 `stock_group_cross_ref` (many-to-many) · `price_cache` (last known quote) ·
@@ -286,14 +294,16 @@ and the risk estimates) ·
 `news_cache` (company-news articles per ticker, for the holding-detail feed —
 cached so it works offline).
 
-Database is at **v5**, `exportSchema = true`. Each schema change ships an
+Database is at **v6**, `exportSchema = true`. Each schema change ships an
 explicit migration plus a data-survival test in
 [`MigrationTest`](app/src/androidTest/java/com/golddigger/app/data/local/MigrationTest.kt):
 `MIGRATION_1_2` added `news_cache`; `MIGRATION_2_3` added the Formation risk
 columns; `MIGRATION_3_4` added `stocks.isEtf`; `MIGRATION_4_5` added
-`groups.isEtfGroup`. All purely additive. See
+`groups.isEtfGroup`; `MIGRATION_5_6` added `stocks.betaIsEstimate`, so a
+provider-sourced beta can be told apart from a locally-estimated one. All
+purely additive. See
 [`Migrations.kt`](app/src/main/java/com/golddigger/app/data/local/Migrations.kt)
-for the step-by-step when v6 arrives.
+for the step-by-step when v7 arrives.
 
 ### Where the money math lives
 
@@ -350,17 +360,40 @@ own label either.
   Nothing is keyed to a ticker, so it works for any stock added later.
 * **Every threshold is a constant** in
   [`FormationConfig`](app/src/main/java/com/golddigger/app/core/FormationConfig.kt) —
-  beta cut-offs, correlation bands, the volatility trigger, and the three
+  beta cut-offs, correlation bands, the volatility trigger, and the four
   gap-insight percentages — never a magic number in a Composable.
+* **A threshold needs daylight to decide a role.** A metric within
+  `ROLE_THRESHOLD_MARGIN_FRACTION` (10%) of a cutoff isn't trusted to push a
+  holding into the more aggressive role on its own — two betas of 1.48 and 1.51
+  straddling the Attack cutoff are economically almost identical and land in
+  the same role rather than being split by rounding.
 * **Beta** comes from Finnhub's `/stock/metric` endpoint (free tier), cached on
   `stocks.beta` and refreshed on a 7-day TTL, not on every screen open. When a
-  provider returns no beta, it is estimated from accumulated price history
-  against the portfolio's own value series.
+  provider returns no beta, it is estimated from the portfolio's own recorded
+  price history instead — and `stocks.betaIsEstimate` records which source the
+  cached value came from. Only a confirmed provider-sourced beta is kept
+  across a transient fetch failure; a locally-estimated value (or one of
+  unknown, pre-upgrade provenance) is always recomputed fresh under the
+  current daily-history rule rather than trusted indefinitely, since it's a
+  cheap, no-network calculation and the algorithm behind it can change. This
+  only works because `FinnhubStockPriceApi.fetchMetrics` actually lets a
+  fetch failure propagate as an exception — it used to swallow every failure
+  (network, HTTP, rate limit) into the same empty `StockMetrics(beta = null)`
+  a ticker with no provider beta produces on a genuine success, which made an
+  outage indistinguishable from "nothing to fall back to" and discarded a
+  perfectly good cached beta on every blip.
 * **Dominant-sector correlation** is estimated from the trailing price history of
-  the user's own holdings in the largest sector. The spec's ETF-proxy approach
-  (SOXX for semis, XLK for tech, …) needs historical candles, which Finnhub's
-  free tier does not serve — `FormationConfig.SECTOR_PROXIES` is wired for a
-  provider that does. Beta is measured against **SPY** by default
+  the user's own holdings in the largest sector, aligned to one closing price per
+  *trading day* rather than raw sync ticks — otherwise a single session where two
+  assets happen to drift the same way can look like a real relationship. It needs
+  12+ overlapping trading days before it's trusted, and (unlike beta) never falls
+  back to a stale reading when there isn't enough history yet — it just reports no
+  signal. ETFs get no sector from Finnhub at all; `FormationConfig.FIXED_INCOME_ETFS`
+  tags known bond funds so they aren't correlated against a basket of equity ETFs
+  they happened to share an "Unclassified" bucket with. The spec's sector-proxy
+  approach (SOXX for semis, XLK for tech, …) needs historical candles, which
+  Finnhub's free tier does not serve — `FormationConfig.SECTOR_PROXIES` is wired
+  for a provider that does. Beta is measured against **SPY** by default
   (`DEFAULT_BETA_BENCHMARK`): that is the definition of *market* beta, and the
   sector tilt of a concentrated book is captured by the correlation leg, not by
   swapping in a tech index (which would flatten every tech name to ~1.0).
@@ -561,13 +594,15 @@ Drive, email, or another device.
 
 ## Tests
 
-Unit (`./gradlew :app:testDebugUnitTest`, 128 tests):
+Unit (`./gradlew :app:testDebugUnitTest`, 151 tests):
 
 * `PortfolioCalculatorTest` — totals and per-holding math, including
   group-allocation % measured against a type's own total (ETF vs. individual
   stock) rather than the whole portfolio
 * `FormationClassifierTest` — role assignment, overrides, line ordering, gap
-  insights, zone sizing
+  insights, zone sizing, and the threshold margin that keeps a beta/
+  correlation/volatility reading within ~10% of a cutoff from deciding a
+  role on its own
 * `RiskMathTest` — beta / correlation / volatility
 * `PortfolioOcrParserTest` — header-anchored and inferred-column table reading,
   geometry-based row grouping, ticker vs. chrome detection, deriving avg cost
@@ -580,6 +615,9 @@ Unit (`./gradlew :app:testDebugUnitTest`, 128 tests):
   news that arrive for a holding deleted mid-request being dropped
 * `GroupsViewModelTest` — Turbine + MockK: stock/ETF group partitioning, per-tab
   value-descending ordering, empty state
+* `HoldingDetailViewModelTest` — Turbine + MockK: a holding is only offered
+  groups of its own type to join, but a pre-existing mismatched membership
+  still shows up so there's a way to remove it
 * `ImportPortfolioViewModelTest` — MockK: a blank-ticker row is excluded before
   it ever reaches the repository, a genuine write failure is reported as failed
   rather than imported, and a row whose position was already committed is
@@ -606,6 +644,22 @@ Unit (`./gradlew :app:testDebugUnitTest`, 128 tests):
   price-point timestamps; asserts both `sectorCorrelation` and the fallback-beta
   estimate are computed over the shared timestamp axis rather than paired by raw
   list index
+* `BetaProvenanceTest` — `stock.betaIsEstimate` distinguishes a provider-sourced
+  beta from a locally-estimated one: a legacy/unknown-provenance value with
+  insufficient daily history is invalidated rather than kept forever, a local
+  estimate is recomputed once enough daily history exists, and a genuine
+  provider-sourced value survives a transient fetch failure instead of being
+  overwritten by a fresh local estimate
+* `FinnhubStockPriceApiTest` — the real Finnhub adapter, not a fake: a network
+  error, a non-429 HTTP failure, and a 429 each propagate as their own
+  exception type rather than being swallowed into a look-alike "no beta"
+  response, coroutine cancellation isn't rewrapped, and a truly successful
+  response (with or without a beta value) returns quietly
+* `FinnhubBetaProvenanceIntegrationTest` — the same provider-outage-vs-empty-
+  response distinction, proven through the real `FinnhubStockPriceApi` wired
+  into the repository (only its Retrofit service is mocked): an outage keeps
+  the cached provider beta, a genuine empty response falls back to the local
+  estimate
 * `MarketHoursTest` — the open/closed window and the latest session open (today's
   mid-session and after the close, the previous weekday's pre-market and on a
   weekend)
@@ -615,9 +669,9 @@ Unit (`./gradlew :app:testDebugUnitTest`, 128 tests):
   Jan 1, 1Y is a calendar year not a fixed 365-day offset, Max has no lower
   bound, and the ranges nest narrowest to widest
 
-Instrumented (`./gradlew :app:connectedDebugAndroidTest`, 15 tests):
+Instrumented (`./gradlew :app:connectedDebugAndroidTest`, 16 tests):
 
-* `MigrationTest` — real v1→v2, v2→v3, v3→v4 and v4→v5 data-survival checks
+* `MigrationTest` — real v1→v2, v2→v3, v3→v4, v4→v5 and v5→v6 data-survival checks
 * `GoldDiggerDatabaseTest` — DAO joins, cascade, history/news trimming,
   role-override + risk-column round trips
 * `DashboardScreenTest` — Hilt + Compose, fake repository

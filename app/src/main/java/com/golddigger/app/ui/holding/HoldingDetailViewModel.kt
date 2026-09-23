@@ -85,12 +85,20 @@ class HoldingDetailViewModel @Inject constructor(
                     // just to stay under combine's 5-flow overload.
                     combine(newsLoading, isRefreshing) { loading, refreshing -> loading to refreshing },
                 ) { (range, history), groups, memberIds, news, (loadingNews, refreshing) ->
+                    val memberIdSet = memberIds.toSet()
                     HoldingDetailUiState.Loaded(
                         holding = valuation,
                         priceHistory = history,
                         selectedRange = range,
-                        allGroups = groups,
-                        memberGroupIds = memberIds.toSet(),
+                        // Mirrors GroupDetailViewModel's own filter: a group
+                        // only offers itself to a holding of its own type, so
+                        // an ETF can't end up dragged into a stocks-type
+                        // group's percentage (or vice versa). An existing
+                        // membership that predates this rule still shows up
+                        // (and can be unchecked) even if the types no longer
+                        // match, so there's always a way to undo it.
+                        allGroups = groups.filter { it.isEtfGroup == valuation.isEtf || it.id in memberIdSet },
+                        memberGroupIds = memberIdSet,
                         news = news,
                         newsLoading = loadingNews,
                         isRefreshing = refreshing,

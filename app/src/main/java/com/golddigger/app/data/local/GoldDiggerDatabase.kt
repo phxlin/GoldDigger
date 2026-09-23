@@ -45,7 +45,7 @@ abstract class GoldDiggerDatabase : RoomDatabase() {
     abstract fun backupDao(): BackupDao
 
     companion object {
-        const val VERSION = 5
+        const val VERSION = 6
         const val NAME = "golddigger.db"
     }
 }

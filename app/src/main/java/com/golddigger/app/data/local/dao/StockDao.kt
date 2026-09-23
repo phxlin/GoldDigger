@@ -33,13 +33,15 @@ interface StockDao {
     @Query(
         """
         UPDATE stocks
-        SET beta = :beta, sectorCorrelation = :sectorCorrelation, riskUpdatedAt = :updatedAt
+        SET beta = :beta, betaIsEstimate = :betaIsEstimate,
+            sectorCorrelation = :sectorCorrelation, riskUpdatedAt = :updatedAt
         WHERE ticker = :ticker
         """,
     )
     suspend fun updateRisk(
         ticker: String,
         beta: Double?,
+        betaIsEstimate: Boolean?,
         sectorCorrelation: Double?,
         updatedAt: Long,
     )

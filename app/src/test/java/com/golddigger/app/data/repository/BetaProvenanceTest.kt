@@ -1,5 +1,6 @@
 package com.golddigger.app.data.repository
 
+import com.golddigger.app.data.UserDataLock
 import com.golddigger.app.data.local.dao.GroupDao
 import com.golddigger.app.data.local.dao.HoldingDao
 import com.golddigger.app.data.local.dao.HoldingRoleOverride
@@ -13,8 +14,8 @@ import com.golddigger.app.data.local.entity.StockEntity
 import com.golddigger.app.data.local.entity.StockGroupCrossRef
 import com.golddigger.app.data.local.relation.GroupWithStocks
 import com.golddigger.app.data.local.relation.HoldingRow
-import com.golddigger.app.data.UserDataLock
 import com.golddigger.app.data.remote.NewsArticle
+import com.golddigger.app.data.remote.PriceApiException
 import com.golddigger.app.data.remote.RemoteQuote
 import com.golddigger.app.data.remote.StockMetrics
 import com.golddigger.app.data.remote.StockPriceApi
@@ -34,24 +35,26 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
- * Regression coverage for the risk-metrics timestamp-alignment fix: a
- * holding's return series and its sector-correlation basket's return series
- * used to be built from two *independently* intersected timestamp sets, so a
- * ticker held over a different date range than its basket-mates could end up
- * paired index-for-index against the wrong calendar days. [sectorCorrelation]
- * (exercised here through the public [PortfolioRepositoryImpl.refreshRiskMetrics])
- * now builds one shared timestamp axis up front and evaluates both series on
- * it, so this only reads the timestamps every involved ticker actually has.
+ * Regression coverage for the provider-vs-local beta distinction: `stock.beta`
+ * alone can't say whether the cached number came from the price provider or
+ * from [PortfolioRepositoryImpl.fallbackBeta]'s own daily-history estimate, so
+ * a value the old (pre daily-close) fallback algorithm computed from a single
+ * intraday session could survive forever — nothing ever re-derived it, even
+ * with `force = true`, once the provider stopped returning a beta for that
+ * ticker. `stock.betaIsEstimate` now records that provenance: only a
+ * confirmed provider-sourced value is preserved across a failed fetch, and
+ * every local estimate (including one of unknown, pre-migration provenance)
+ * is recomputed fresh on every refresh instead of trusted as a cache.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-class RiskMetricsAlignmentTest {
+class BetaProvenanceTest {
 
     private val holdingRows = MutableStateFlow<List<HoldingRow>>(emptyList())
     private val points = mutableListOf<PricePointEntity>()
     private val stocks = mutableMapOf<String, StockEntity>()
-    private val riskUpdates = mutableListOf<Triple<String, Double?, Double?>>()
 
     private val holdingDao = object : HoldingDao {
         override suspend fun insert(holding: com.golddigger.app.data.local.entity.HoldingEntity) = 0L
@@ -106,7 +109,6 @@ class RiskMetricsAlignmentTest {
             sectorCorrelation: Double?,
             updatedAt: Long,
         ) {
-            riskUpdates += Triple(ticker, beta, sectorCorrelation)
             stocks[ticker]?.let {
                 stocks[ticker] = it.copy(
                     beta = beta,
@@ -149,7 +151,23 @@ class RiskMetricsAlignmentTest {
         priceUpdatedAt = 1L,
     )
 
-    private fun repository(): PortfolioRepositoryImpl {
+    /** A distinct exchange-local trading day for each [t], well within market hours. */
+    private fun day(t: Int): Long = LocalDate.of(2026, 1, 1).plusDays(t.toLong())
+        .atTime(12, 0)
+        .atZone(ZoneId.of("America/New_York"))
+        .toInstant()
+        .toEpochMilli()
+
+    /** A non-constant-return price series so a real fallback beta can be derived. */
+    private fun price(t: Int): Double = 100.0 + 3 * t + 5 * (t % 3)
+
+    /** Seeds a single held ticker, AAA, with [days] daily price points. */
+    private fun seedSingleHolding(days: Int) {
+        for (t in 1..days) points += PricePointEntity(ticker = "AAA", price = price(t), timestamp = day(t))
+        holdingRows.value = listOf(row("AAA", "Tech", shares = 1.0, price = price(days)))
+    }
+
+    private fun repository(fetchMetrics: suspend (String) -> StockMetrics): PortfolioRepositoryImpl {
         every { settingsRepository.settings } returns MutableStateFlow(
             SyncSettings(
                 refreshInterval = kotlin.time.Duration.parse("15m"),
@@ -162,7 +180,7 @@ class RiskMetricsAlignmentTest {
             override val maxSymbolsPerQuoteRequest = 1
             override suspend fun searchSymbols(query: String): List<SymbolSearchResult> = emptyList()
             override suspend fun fetchProfile(ticker: String): StockProfile? = null
-            override suspend fun fetchMetrics(ticker: String): StockMetrics = StockMetrics(beta = null)
+            override suspend fun fetchMetrics(ticker: String): StockMetrics = fetchMetrics(ticker)
             override suspend fun fetchQuotes(tickers: List<String>): List<RemoteQuote> = emptyList()
             override suspend fun fetchCompanyNews(ticker: String, fromEpochDay: Long, toEpochDay: Long): List<NewsArticle> = emptyList()
         }
@@ -183,72 +201,48 @@ class RiskMetricsAlignmentTest {
         )
     }
 
-    /**
-     * AAA and BBB are the portfolio's only two (same-sector) holdings. AAA
-     * has one price point per trading day for t=1..20; BBB only starts
-     * syncing later, t=6..25 — the two series only truly overlap on t=6..20
-     * (15 days). Over exactly that shared window BBB's price is set to
-     * double AAA's; outside it each ticker's price is unrelated to the
-     * other's, so pairing by raw list index instead of shared trading days
-     * (the bug) pulls in mismatched days for both the correlation estimate
-     * (AAA vs. its one basket-mate, BBB) and the fallback-beta estimate (AAA
-     * vs. the whole non-cash portfolio, i.e. AAA+BBB weighted by shares).
-     */
-    private fun aaa(t: Int) = 100.0 + 3 * t + 5 * (t % 3)
+    @Test
+    fun `a legacy intraday estimate with insufficient daily history is invalidated, not kept`() = runTest {
+        // Only 5 daily points — well under FormationConfig.MIN_POINTS_FOR_ESTIMATE
+        // (12) — so the new daily-history rule can't derive a fresh estimate.
+        seedSingleHolding(days = 5)
+        // A pre-migration row: beta present but provenance unknown (as if
+        // computed by the old, single-session intraday algorithm).
+        stocks["AAA"] = StockEntity("AAA", "AAA Inc", sector = "Tech", beta = 3.7, betaIsEstimate = null)
 
-    /** A distinct exchange-local trading day for each [t], well within market hours. */
-    private fun day(t: Int): Long = LocalDate.of(2026, 1, 1).plusDays(t.toLong())
-        .atTime(12, 0)
-        .atZone(java.time.ZoneId.of("America/New_York"))
-        .toInstant()
-        .toEpochMilli()
+        repository(fetchMetrics = { StockMetrics(beta = null) }).refreshRiskMetrics(force = true)
 
-    private fun seedOverlappingTickers() {
-        for (t in 1..20) points += PricePointEntity(ticker = "AAA", price = aaa(t), timestamp = day(t))
-        for (t in 6..20) points += PricePointEntity(ticker = "BBB", price = 2 * aaa(t), timestamp = day(t))
-        for (t in 21..25) points += PricePointEntity(ticker = "BBB", price = 9_999.0, timestamp = day(t))
-
-        stocks["AAA"] = StockEntity("AAA", "AAA Inc", sector = "Tech")
-        stocks["BBB"] = StockEntity("BBB", "BBB Inc", sector = "Tech")
-        holdingRows.value = listOf(
-            row("AAA", "Tech", shares = 1.0, price = aaa(20)),
-            row("BBB", "Tech", shares = 1.0, price = 9_999.0),
-        )
+        val updated = stocks.getValue("AAA")
+        assertThat(updated.beta).isNull()
+        assertThat(updated.betaIsEstimate).isTrue()
     }
 
     @Test
-    fun `correlation is computed over the timestamps both tickers actually share, not by raw list index`() = runTest {
-        // Over the shared window BBB = 2*AAA, so their per-period returns are
-        // identical and correlation must come out as exactly 1.0. Pairing by
-        // raw list index instead of shared timestamps (the bug) would pull
-        // correlation away from 1.0.
-        seedOverlappingTickers()
+    fun `a cached local estimate is recomputed once sufficient daily history exists`() = runTest {
+        // 20 daily points — comfortably over the minimum — for a single-held
+        // ticker, whose fallback beta (asset measured against a market series
+        // that, with only itself held, is the same series) always comes out
+        // to exactly 1.0.
+        seedSingleHolding(days = 20)
+        stocks["AAA"] = StockEntity("AAA", "AAA Inc", sector = "Tech", beta = 5.0, betaIsEstimate = true)
 
-        repository().refreshRiskMetrics(force = true)
+        repository(fetchMetrics = { StockMetrics(beta = null) }).refreshRiskMetrics(force = true)
 
-        val aaaCorrelation = riskUpdates.first { it.first == "AAA" }.third
-        assertThat(aaaCorrelation).isNotNull()
-        assertThat(aaaCorrelation!!).isWithin(1e-9).of(1.0)
+        val updated = stocks.getValue("AAA")
+        assertThat(updated.beta).isNotNull()
+        assertThat(updated.beta!!).isWithin(1e-9).of(1.0)
+        assertThat(updated.betaIsEstimate).isTrue()
     }
 
     @Test
-    fun `fallback beta is computed over the timestamps asset and market actually share, not by raw list index`() = runTest {
-        // The (self-inclusive, share-weighted) market series here is
-        // AAA(t) + BBB(t) = AAA(t) + 2*AAA(t) = 3*AAA(t) at every shared
-        // timestamp — a constant multiple of AAA's own series. Percent
-        // returns are scale-invariant, so the market's returns equal AAA's
-        // own returns exactly, making beta = cov(A,A)/var(A) = 1.0 *only if*
-        // both series are evaluated on the same 15-point shared window. The
-        // old bug evaluated the asset over its own full 20-point range and
-        // the market over the separately-intersected 15-point range, then
-        // zipped whatever came out by index regardless of length — for this
-        // non-constant-return series that does not also land on 1.0.
-        seedOverlappingTickers()
+    fun `a provider-sourced beta survives a transient provider failure`() = runTest {
+        seedSingleHolding(days = 20)
+        stocks["AAA"] = StockEntity("AAA", "AAA Inc", sector = "Tech", beta = 1.23, betaIsEstimate = false)
 
-        repository().refreshRiskMetrics(force = true)
+        repository(fetchMetrics = { throw PriceApiException("boom") }).refreshRiskMetrics(force = true)
 
-        val aaaBeta = riskUpdates.first { it.first == "AAA" }.second
-        assertThat(aaaBeta).isNotNull()
-        assertThat(aaaBeta!!).isWithin(1e-9).of(1.0)
+        val updated = stocks.getValue("AAA")
+        assertThat(updated.beta).isEqualTo(1.23)
+        assertThat(updated.betaIsEstimate).isFalse()
     }
 }

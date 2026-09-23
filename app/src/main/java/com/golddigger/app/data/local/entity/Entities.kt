@@ -20,6 +20,16 @@ data class StockEntity(
      * not every provider returns it. Powers the Formation view's role assignment.
      */
     val beta: Double? = null,
+    /**
+     * Whether [beta] came from the local, no-network estimate rather than the
+     * provider — null for a row written before this distinction existed. A
+     * locally-estimated (or provenance-unknown) beta is always recomputed on
+     * the next risk refresh rather than trusted as a cache, since the estimate
+     * is cheap and the underlying algorithm can change (e.g. the move to
+     * daily-close alignment); only a provider-sourced value is worth
+     * preserving across a transient provider failure.
+     */
+    val betaIsEstimate: Boolean? = null,
     /** Trailing-window correlation of this holding to the portfolio's dominant sector, [-1, 1]. */
     val sectorCorrelation: Double? = null,
     /** When [beta] / [sectorCorrelation] were last refreshed (epoch ms), for the TTL. */

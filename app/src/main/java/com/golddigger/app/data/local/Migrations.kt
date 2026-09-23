@@ -19,7 +19,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 object Migrations {
 
     /** Every shipped migration, in order. */
-    val ALL: Array<Migration> get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    val ALL: Array<Migration>
+        get() = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 
     /**
      * v1 -> v2: adds the `news_cache` table backing the holding-detail news feed.
@@ -83,6 +84,20 @@ object Migrations {
     val MIGRATION_4_5 = object : Migration(4, 5) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE `groups` ADD COLUMN `isEtfGroup` INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    /**
+     * v5 -> v6: adds `stocks.betaIsEstimate`, distinguishing a provider-sourced
+     * beta from one this app estimated locally from price history. Left NULL
+     * (unknown provenance) for every existing row, which the repository treats
+     * the same as a local estimate — always recomputed on the next risk
+     * refresh rather than trusted indefinitely, since a pre-migration beta may
+     * have been estimated by an older, less accurate algorithm.
+     */
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `stocks` ADD COLUMN `betaIsEstimate` INTEGER")
         }
     }
 }

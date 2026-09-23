@@ -9,6 +9,7 @@ import com.golddigger.app.data.local.Migrations.MIGRATION_1_2
 import com.golddigger.app.data.local.Migrations.MIGRATION_2_3
 import com.golddigger.app.data.local.Migrations.MIGRATION_3_4
 import com.golddigger.app.data.local.Migrations.MIGRATION_4_5
+import com.golddigger.app.data.local.Migrations.MIGRATION_5_6
 import com.google.common.truth.Truth.assertThat
 import org.junit.Rule
 import org.junit.Test
@@ -195,6 +196,38 @@ class MigrationTest {
         db.query("SELECT isEtfGroup FROM groups WHERE id = 1").use { c ->
             assertThat(c.moveToFirst()).isTrue()
             assertThat(c.getInt(0)).isEqualTo(0)
+        }
+        db.close()
+    }
+
+    @Test
+    @Throws(IOException::class)
+    fun migrate5To6_keepsDataAndAddsBetaIsEstimateColumn() {
+        helper.createDatabase(TEST_DB, 5).use { db ->
+            db.insert(
+                "stocks",
+                android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE,
+                ContentValues().apply {
+                    put("ticker", "BNDX")
+                    put("companyName", "Vanguard Total International Bond ETF")
+                    put("sector", "Fixed Income")
+                    put("beta", 0.3)
+                },
+            )
+        }
+
+        val db = helper.runMigrationsAndValidate(TEST_DB, 6, true, MIGRATION_5_6)
+
+        // Existing rows are untouched...
+        db.query("SELECT beta FROM stocks WHERE ticker = 'BNDX'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.getDouble(0)).isEqualTo(0.3)
+        }
+        // ...and the new column exists and defaults every pre-existing beta to
+        // "unknown provenance" (null), not "provider-sourced".
+        db.query("SELECT betaIsEstimate FROM stocks WHERE ticker = 'BNDX'").use { c ->
+            assertThat(c.moveToFirst()).isTrue()
+            assertThat(c.isNull(0)).isTrue()
         }
         db.close()
     }

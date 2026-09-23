@@ -4,6 +4,7 @@ import com.golddigger.app.core.CashHolding
 import com.golddigger.app.domain.model.FormationInput
 import com.golddigger.app.domain.model.FormationRole
 import com.golddigger.app.domain.model.HoldingValuation
+import com.golddigger.app.domain.model.InsightSeverity
 import com.golddigger.app.domain.model.RiskProfile
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
@@ -139,6 +140,39 @@ class FormationClassifierTest {
     }
 
     @Test
+    fun `a mostly market-like book gets an informational note, not a warning`() {
+        val f = classify(
+            listOf(
+                holding(1, "MID_A", 800.0),
+                holding(2, "MID_B", 100.0),
+                holding(3, "EDGE", 100.0),
+            ),
+            risk = mapOf(
+                "MID_A" to RiskProfile("MID_A", beta = 1.0),
+                "MID_B" to RiskProfile("MID_B", beta = 1.05),
+                "EDGE" to RiskProfile("EDGE", beta = 2.0),
+            ),
+        )
+        val note = f.insights.single { it.id == "mostly-midfield" }
+        assertThat(note.severity).isEqualTo(InsightSeverity.INFO)
+    }
+
+    @Test
+    fun `a book without a dominant midfield gets no mostly-market-like note`() {
+        val f = classify(
+            listOf(
+                holding(1, "ATK", 500.0),
+                holding(2, "DEF", 500.0),
+            ),
+            risk = mapOf(
+                "ATK" to RiskProfile("ATK", beta = 2.0),
+                "DEF" to RiskProfile("DEF", beta = 0.3),
+            ),
+        )
+        assertThat(f.insights.map { it.id }).doesNotContain("mostly-midfield")
+    }
+
+    @Test
     fun `an attack-dominated book warns that the formation is front-loaded`() {
         val f = classify(
             listOf(
@@ -181,7 +215,7 @@ class FormationClassifierTest {
             ),
             risk = mapOf(
                 "HOT" to RiskProfile("HOT", beta = 3.0),
-                "MILD" to RiskProfile("MILD", beta = 1.6),
+                "MILD" to RiskProfile("MILD", beta = 1.8), // clears MIDFIELD_BETA_MAX's margin, but barely
             ),
         )
         val players = f.zone(FormationRole.ATTACK)!!.players.associateBy { it.ticker }
@@ -198,7 +232,7 @@ class FormationClassifierTest {
                 holding(3, "MID", 100.0),
             ),
             risk = mapOf(
-                "MILD" to RiskProfile("MILD", beta = 1.6),
+                "MILD" to RiskProfile("MILD", beta = 1.8),
                 "WILD" to RiskProfile("WILD", beta = 3.4),
                 "MID" to RiskProfile("MID", beta = 2.3),
             ),
@@ -229,5 +263,107 @@ class FormationClassifierTest {
             overrides = mapOf(1L to FormationRole.MIDFIELD),
         )
         assertThat(roleOf(f, CashHolding.TICKER)).isEqualTo(FormationRole.MIDFIELD)
+    }
+
+    // --- Role-threshold margin ---------------------------------------------
+    //
+    // FormationConfig.ROLE_THRESHOLD_MARGIN_FRACTION (10%) means a metric has
+    // to clear a threshold by more than 10% of the threshold's own value to
+    // decide a role on its own. These use their own synthetic betas/
+    // correlations/volatilities — not the AMZN/AVGO pair that motivated the
+    // change — to check the rule generalizes rather than just fixing one pair.
+
+    @Test
+    fun `two betas straddling the attack cutoff by a hair both land in midfield`() {
+        // MIDFIELD_BETA_MAX = 1.5; 1.49 and 1.52 are both within 10% of it
+        // (1.35..1.65), so neither should be trusted to decide Attack alone.
+        val f = classify(
+            listOf(
+                holding(1, "JUST_UNDER", 500.0),
+                holding(2, "JUST_OVER", 500.0),
+            ),
+            risk = mapOf(
+                "JUST_UNDER" to RiskProfile("JUST_UNDER", beta = 1.49),
+                "JUST_OVER" to RiskProfile("JUST_OVER", beta = 1.52),
+            ),
+        )
+        assertThat(roleOf(f, "JUST_UNDER")).isEqualTo(FormationRole.MIDFIELD)
+        assertThat(roleOf(f, "JUST_OVER")).isEqualTo(FormationRole.MIDFIELD)
+    }
+
+    @Test
+    fun `a beta that clearly clears the attack margin is still an attacker`() {
+        // 1.5 * 1.10 = 1.65 — 1.9 clears it with room to spare.
+        val f = classify(
+            listOf(holding(1, "CLEAR", 500.0)),
+            risk = mapOf("CLEAR" to RiskProfile("CLEAR", beta = 1.9)),
+        )
+        assertThat(roleOf(f, "CLEAR")).isEqualTo(FormationRole.ATTACK)
+    }
+
+    @Test
+    fun `a beta stuck between the defense and midfield margins with no other signal benches the holding`() {
+        // DEFENSE_BETA_MAX = 0.9; the no-man's-land is roughly 0.81..0.99.
+        // 0.92 is inside it and there's no correlation or volatility reading
+        // to break the tie, so this isn't confident enough to place.
+        val f = classify(
+            listOf(holding(1, "AMBIGUOUS", 500.0)),
+            risk = mapOf("AMBIGUOUS" to RiskProfile("AMBIGUOUS", beta = 0.92)),
+        )
+        assertThat(roleOf(f, "AMBIGUOUS")).isEqualTo(FormationRole.BENCH)
+    }
+
+    @Test
+    fun `a beta clearly under the defense margin is still a defender`() {
+        // 0.9 * 0.90 = 0.81 — 0.6 clears it with room to spare.
+        val f = classify(
+            listOf(holding(1, "SAFE", 500.0)),
+            risk = mapOf("SAFE" to RiskProfile("SAFE", beta = 0.6)),
+        )
+        assertThat(roleOf(f, "SAFE")).isEqualTo(FormationRole.DEFENSE)
+    }
+
+    @Test
+    fun `a correlation just past the high-correlation cutoff does not yet force attack`() {
+        // MODERATE_CORRELATION_MAX = 0.7; 0.72 is within 10% of it (up to
+        // 0.77), so it should read as moderate (Midfield), not high (Attack)
+        // — the tame beta alone wouldn't put it anywhere near Attack either.
+        val f = classify(
+            listOf(holding(1, "BARELY", 500.0)),
+            risk = mapOf("BARELY" to RiskProfile("BARELY", beta = 0.5, sectorCorrelation = 0.72)),
+        )
+        assertThat(roleOf(f, "BARELY")).isEqualTo(FormationRole.MIDFIELD)
+    }
+
+    @Test
+    fun `a correlation that clearly clears the high-correlation margin forces attack`() {
+        // 0.7 * 1.10 = 0.77 — 0.95 clears it with room to spare.
+        val f = classify(
+            listOf(holding(1, "TIED", 500.0)),
+            risk = mapOf("TIED" to RiskProfile("TIED", beta = 0.5, sectorCorrelation = 0.95)),
+        )
+        assertThat(roleOf(f, "TIED")).isEqualTo(FormationRole.ATTACK)
+    }
+
+    @Test
+    fun `volatility just past the high-volatility cutoff does not yet force attack`() {
+        // HIGH_VOLATILITY_STDDEV = 0.035; 0.036 is within 10% of it (up to
+        // 0.0385), so a tame beta and no correlation reading should leave
+        // this on the bench rather than confidently in Attack.
+        val f = classify(
+            listOf(holding(1, "TWITCHY", 500.0)),
+            risk = mapOf("TWITCHY" to RiskProfile("TWITCHY", realizedVolatility = 0.036)),
+        )
+        assertThat(roleOf(f, "TWITCHY")).isEqualTo(FormationRole.BENCH)
+    }
+
+    @Test
+    fun `volatility that clearly clears the high-volatility margin forces attack`() {
+        // 0.035 * 1.10 = 0.0385 — 0.05 clears it with room to spare.
+        val f = classify(
+            listOf(holding(1, "WILDSWING", 500.0)),
+            risk = mapOf("WILDSWING" to RiskProfile("WILDSWING", realizedVolatility = 0.05)),
+        )
+        assertThat(roleOf(f, "WILDSWING")).isEqualTo(FormationRole.ATTACK)
     }
 }
