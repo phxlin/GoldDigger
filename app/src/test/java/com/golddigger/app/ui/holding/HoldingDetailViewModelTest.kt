@@ -58,6 +58,7 @@ class HoldingDetailViewModelTest {
         SavedStateHandle(mapOf(Routes.ARG_HOLDING_ID to 1L)),
     )
 
+    @Suppress("SameParameterValue")
     private fun holding(isEtf: Boolean) = HoldingValuation(
         holdingId = 1L,
         ticker = "AVGO",

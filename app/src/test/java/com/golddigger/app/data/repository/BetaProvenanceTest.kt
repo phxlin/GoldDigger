@@ -138,6 +138,7 @@ class BetaProvenanceTest {
     private val newsDao = mockk<NewsDao>(relaxed = true)
     private val settingsRepository = mockk<SettingsRepository>()
 
+    @Suppress("SameParameterValue")
     private fun row(ticker: String, sector: String, shares: Double, price: Double) = HoldingRow(
         id = ticker.hashCode().toLong(),
         ticker = ticker,

@@ -44,6 +44,7 @@ object FormationConfig {
      * holdings in that sector instead — see `PortfolioRepositoryImpl`). Keys are
      * matched case-insensitively as substrings of the Finnhub industry string.
      */
+    @Suppress("unused")
     val SECTOR_PROXIES: Map<String, String> = mapOf(
         "semiconductor" to "SOXX",
         "technology" to "XLK",
@@ -125,6 +126,7 @@ object FormationConfig {
     const val MIN_POINTS_FOR_ESTIMATE: Int = 12
 
     /** Trailing window (in days) for the dominant-sector correlation estimate. */
+    @Suppress("unused")
     const val CORRELATION_WINDOW_DAYS: Long = 90
 
     /** Risk metrics (beta, correlation) are re-fetched / recomputed no more often than this. */
