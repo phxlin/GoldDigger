@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -34,6 +35,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -52,6 +54,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -65,12 +68,15 @@ import com.golddigger.app.ui.components.DeltaChip
 import com.golddigger.app.ui.components.SectionCard
 import com.golddigger.app.ui.common.asChartTimestamp
 import com.golddigger.app.ui.common.asCurrency
+import com.golddigger.app.ui.common.asMoneyInput
 import com.golddigger.app.ui.common.asPercent
 import com.golddigger.app.ui.common.asPlainPercent
 import com.golddigger.app.ui.common.asShares
 import com.golddigger.app.ui.common.asSignedCurrency
 import com.golddigger.app.ui.common.displayLabel
+import com.golddigger.app.ui.common.filterToNumericInput
 import com.golddigger.app.ui.common.isCash
+import com.golddigger.app.ui.common.limitDecimals
 import com.golddigger.app.ui.common.relativeTime
 import com.golddigger.app.ui.components.PriceHistoryChart
 import com.golddigger.app.ui.theme.PortfolioColors
@@ -85,6 +91,7 @@ fun HoldingDetailScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var confirmDelete by remember { mutableStateOf(false) }
+    var editingCash by remember { mutableStateOf(false) }
 
     val title = (state as? HoldingDetailUiState.Loaded)?.holding?.displayLabel() ?: "Holding"
 
@@ -99,10 +106,8 @@ fun HoldingDetailScreen(
                 },
                 actions = {
                     (state as? HoldingDetailUiState.Loaded)?.let { loaded ->
-                        if (!loaded.holding.isCash) {
-                            IconButton(onClick = onEdit) {
-                                Icon(Icons.Filled.Edit, contentDescription = "Edit")
-                            }
+                        IconButton(onClick = { if (loaded.holding.isCash) editingCash = true else onEdit() }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit")
                         }
                         IconButton(onClick = { confirmDelete = true }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete")
@@ -292,6 +297,18 @@ fun HoldingDetailScreen(
         }
     }
 
+    val cash = (state as? HoldingDetailUiState.Loaded)?.holding?.takeIf { it.isCash }
+    if (editingCash && cash != null) {
+        EditCashDialog(
+            currentBalance = cash.marketValue ?: cash.costBasis,
+            onDismiss = { editingCash = false },
+            onConfirm = {
+                viewModel.setCashBalance(it)
+                editingCash = false
+            },
+        )
+    }
+
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -308,6 +325,45 @@ fun HoldingDetailScreen(
             },
         )
     }
+}
+
+@Composable
+private fun EditCashDialog(
+    currentBalance: Double,
+    onDismiss: () -> Unit,
+    onConfirm: (Double) -> Unit,
+) {
+    var amount by remember { mutableStateOf(currentBalance.asMoneyInput()) }
+    val parsed = amount.toDoubleOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit cash") },
+        text = {
+            Column {
+                Text(
+                    "Sets your cash balance to this amount, replacing the current one.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filterToNumericInput().limitDecimals(2) },
+                    label = { Text("Balance") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = parsed != null && parsed > 0.0,
+                onClick = { parsed?.let(onConfirm) },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** How far (px) a drag must travel before it moves the selection by one range. */

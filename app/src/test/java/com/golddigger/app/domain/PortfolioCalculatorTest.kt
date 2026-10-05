@@ -40,6 +40,36 @@ class PortfolioCalculatorTest {
     }
 
     @Test
+    fun `per-share day change in dollars is backed out of price and percent`() {
+        // $110 after a +10% day means it closed yesterday at $100: +$10/share.
+        val up = calculator.summarize(
+            listOf(holding(1, "UP", shares = 3.0, costBasis = 300.0, price = 110.0, dayChangePct = 10.0)),
+        ).holdings.single()
+        assertThat(up.dayChangePerShare!!).isWithin(1e-9).of(10.0)
+        assertThat(up.dayChangeValue!!).isWithin(1e-9).of(30.0)
+
+        // $90 after a -10% day closed yesterday at $100: -$10/share.
+        val down = calculator.summarize(
+            listOf(holding(2, "DN", shares = 3.0, costBasis = 300.0, price = 90.0, dayChangePct = -10.0)),
+        ).holdings.single()
+        assertThat(down.dayChangePerShare!!).isWithin(1e-9).of(-10.0)
+        assertThat(down.dayChangeValue!!).isWithin(1e-9).of(-30.0)
+    }
+
+    @Test
+    fun `per-share day change is unknown without a price or a percent`() {
+        val noPrice = calculator.summarize(
+            listOf(holding(1, "AAA", shares = 1.0, costBasis = 10.0, price = null)),
+        ).holdings.single()
+        assertThat(noPrice.dayChangePerShare).isNull()
+
+        val noPct = calculator.summarize(
+            listOf(holding(2, "BBB", shares = 1.0, costBasis = 10.0, price = 10.0, dayChangePct = null)),
+        ).holdings.single()
+        assertThat(noPct.dayChangePerShare).isNull()
+    }
+
+    @Test
     fun `single holding gain is computed from price and cost basis`() {
         val summary = calculator.summarize(
             listOf(holding(1, "AAA", shares = 10.0, costBasis = 1_000.0, price = 150.0)),

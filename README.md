@@ -94,7 +94,15 @@ Get a free key at <https://finnhub.io/register>.
   same stock — the app flags it before you save so it's never a surprise.
 * **Cash** — a synthetic `$CASH` position (price pinned to 1.0, never quoted)
   that flows through every calculation, the pie chart and the group buckets with
-  no special cases in the math.
+  no special cases in the math. The wallet icon adds to the balance; opening the
+  Cash row and tapping the pencil sets the balance to an exact amount instead.
+  Cash amounts and Total cost stop accepting digits past two decimals, since
+  both are real currency. Cost/share is a derived unit price, not currency on
+  its own, so it's capped more loosely at four decimals instead — rounding a
+  *converted* per-share price to cents and multiplying it back by the share
+  count used to drift the saved total by a cent or more (e.g. $100 over 3
+  shares → $33.33/share → saved back as $99.99); four decimals keeps that
+  round trip accurate to the cent.
 * **Dashboard** — total value, all-time and day gain/loss, a today-dated header
   in the device's current time zone, an interactive donut chart (drag a finger
   across it to inspect a slice), and a holdings list.
@@ -115,7 +123,11 @@ Get a free key at <https://finnhub.io/register>.
   legend; each tab remembers its own collapsed/expanded state independently.
 * **Sortable holdings list** — tap the **Symbol / Price / Value** column headers
   to reorder ascending/descending; unpriced rows always sink to the bottom. Each
-  row shows the latest per-share price, today's move, market value, gain %, and a
+  row shows the latest per-share price, today's move in both dollars and percent
+  per share (e.g. `+$3.09 (+1.34%)`, the same shape as the detail screen's gain /
+  loss), market value with today's gain/loss in dollars on the whole position
+  beneath it (e.g. `+$55.93`; its percent is identical to the Price column's, so
+  it isn't repeated, and the lifetime gain/loss is on the detail screen), and a
   color dot matching its pie slice.
 * **Per-holding detail** — big price, today's move, average cost, gain/loss,
   % of portfolio, a [price-history chart with a range selector](#price-history-range-selector),
@@ -388,9 +400,15 @@ own label either.
   assets happen to drift the same way can look like a real relationship. It needs
   12+ overlapping trading days before it's trusted, and (unlike beta) never falls
   back to a stale reading when there isn't enough history yet — it just reports no
-  signal. ETFs get no sector from Finnhub at all; `FormationConfig.FIXED_INCOME_ETFS`
-  tags known bond funds so they aren't correlated against a basket of equity ETFs
-  they happened to share an "Unclassified" bucket with. The spec's sector-proxy
+  signal. **It is a stock-vs-sector-peers test only:** the comparison group
+  (`CorrelationBasket`) is the largest labelled sector among individual stocks
+  (two or more names, never cash, never funds, never unlabelled stocks), and funds
+  get no correlation reading at all, so ETFs are placed on beta and volatility
+  alone. Finnhub gives ETFs no sector, so broad index funds used to pile into one
+  unlabelled bucket that is really "the market"; measuring against it put every
+  index fund — and, over a short sample, bond funds like BNDX — in Attack on
+  correlation alone. (`FormationConfig.FIXED_INCOME_ETFS` still tags bond funds
+  with a "Fixed Income" sector for display and grouping.) The spec's sector-proxy
   approach (SOXX for semis, XLK for tech, …) needs historical candles, which
   Finnhub's free tier does not serve — `FormationConfig.SECTOR_PROXIES` is wired
   for a provider that does. Beta is measured against **SPY** by default
@@ -594,11 +612,12 @@ Drive, email, or another device.
 
 ## Tests
 
-Unit (`./gradlew :app:testDebugUnitTest`, 151 tests):
+Unit (`./gradlew :app:testDebugUnitTest`, 164 tests):
 
 * `PortfolioCalculatorTest` — totals and per-holding math, including
   group-allocation % measured against a type's own total (ETF vs. individual
-  stock) rather than the whole portfolio
+  stock) rather than the whole portfolio, and the per-share and whole-position
+  dollar day change backed out of price and percent
 * `FormationClassifierTest` — role assignment, overrides, line ordering, gap
   insights, zone sizing, and the threshold margin that keeps a beta/
   correlation/volatility reading within ~10% of a cutoff from deciding a
@@ -617,7 +636,8 @@ Unit (`./gradlew :app:testDebugUnitTest`, 151 tests):
   value-descending ordering, empty state
 * `HoldingDetailViewModelTest` — Turbine + MockK: a holding is only offered
   groups of its own type to join, but a pre-existing mismatched membership
-  still shows up so there's a way to remove it
+  still shows up so there's a way to remove it; setting the cash balance writes
+  a cents-rounded amount and ignores a non-positive one
 * `ImportPortfolioViewModelTest` — MockK: a blank-ticker row is excluded before
   it ever reaches the repository, a genuine write failure is reported as failed
   rather than imported, and a row whose position was already committed is
@@ -626,7 +646,8 @@ Unit (`./gradlew :app:testDebugUnitTest`, 151 tests):
   chip converts the typed number instead of just relabeling it; a failure in a
   step after `addHolding` still completes the save without re-running the
   merge-on-add write, while a failure of `addHolding` itself stays retryable
-  with the form's latest values
+  with the form's latest values; Total cost caps at two decimals and Cost/share
+  at four, so converting total → per-share → total round-trips without drift
 * `BackupTest` — an exported backup parses back to identical data (cash's `$CASH`
   ticker and the empty portfolio included), unknown fields are ignored, and
   every kind of bad file is rejected with its own message: not JSON, empty,
@@ -643,7 +664,11 @@ Unit (`./gradlew :app:testDebugUnitTest`, 151 tests):
 * `RiskMetricsAlignmentTest` — two tickers with only partially-overlapping
   price-point timestamps; asserts both `sectorCorrelation` and the fallback-beta
   estimate are computed over the shared timestamp axis rather than paired by raw
-  list index
+  list index; also that a fund gets no correlation and doesn't join the group
+  stocks are compared with
+* `CorrelationBasketTest` — the comparison group is the largest labelled sector
+  among individual stocks; funds, cash and unlabelled stocks never count, and a
+  top sector with a single name yields no group
 * `BetaProvenanceTest` — `stock.betaIsEstimate` distinguishes a provider-sourced
   beta from a locally-estimated one: a legacy/unknown-provenance value with
   insufficient daily history is invalidated rather than kept forever, a local

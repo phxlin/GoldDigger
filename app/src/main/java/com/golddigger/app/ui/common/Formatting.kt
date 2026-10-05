@@ -3,6 +3,8 @@ package com.golddigger.app.ui.common
 import com.golddigger.app.core.CashHolding
 import com.golddigger.app.domain.model.HoldingValuation
 import com.golddigger.app.domain.model.PriceRange
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.text.NumberFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -50,6 +52,19 @@ fun Double.asShares(): String =
  */
 fun String.filterToNumericInput(): String =
     filterIndexed { i, c -> c.isDigit() || (c == '.' && !substring(0, i).contains('.')) }
+
+/** Drops anything typed past [max] digits after the decimal point. */
+fun String.limitDecimals(max: Int): String {
+    val dot = indexOf('.')
+    return if (dot < 0 || length - dot - 1 <= max) this else substring(0, dot + 1 + max)
+}
+
+/** [this] rounded to [decimals] places, as text for pre-filling an editable numeric field. */
+fun Double.asRoundedInput(decimals: Int): String =
+    BigDecimal.valueOf(this).setScale(decimals, RoundingMode.HALF_UP).toDouble().asEditableNumber()
+
+/** [this] rounded to cents, as text for pre-filling a money field. */
+fun Double.asMoneyInput(): String = asRoundedInput(2)
 
 /**
  * A round-trippable text representation of [this] for pre-filling an editable

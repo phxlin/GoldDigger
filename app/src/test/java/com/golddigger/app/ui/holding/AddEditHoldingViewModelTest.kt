@@ -98,6 +98,47 @@ class AddEditHoldingViewModelTest {
     }
 
     @Test
+    fun `the total-cost field ignores digits past two decimals`() = runTest {
+        val vm = viewModel()
+        vm.onCostModeChange(CostMode.TOTAL)
+
+        vm.onCostChange("181.9")
+        assertThat(vm.state.value.costText).isEqualTo("181.9")
+        vm.onCostChange("181.987")
+        assertThat(vm.state.value.costText).isEqualTo("181.98")
+        vm.onCostChange("12.")
+        assertThat(vm.state.value.costText).isEqualTo("12.")
+    }
+
+    @Test
+    fun `the cost-per-share field ignores digits past four decimals`() = runTest {
+        val vm = viewModel() // defaults to PER_SHARE
+
+        vm.onCostChange("33.3333")
+        assertThat(vm.state.value.costText).isEqualTo("33.3333")
+        vm.onCostChange("33.33339")
+        assertThat(vm.state.value.costText).isEqualTo("33.3333")
+    }
+
+    @Test
+    fun `converting total to cost per share keeps four decimals so converting back doesn't drift`() = runTest {
+        // $100 over 3 shares is a non-terminating per-share price. Rounding
+        // it to cents (33.33) and multiplying back by 3 used to save $99.99,
+        // a cent short of what was actually typed. Four decimals (33.3333)
+        // keeps the round trip accurate to the cent.
+        val vm = viewModel()
+        vm.onSharesChange("3")
+        vm.onCostModeChange(CostMode.TOTAL)
+        vm.onCostChange("100")
+
+        vm.onCostModeChange(CostMode.PER_SHARE)
+        assertThat(vm.state.value.costText).isEqualTo("33.3333")
+
+        vm.onCostModeChange(CostMode.TOTAL)
+        assertThat(vm.state.value.costText).isEqualTo("100")
+    }
+
+    @Test
     fun `switching to the same mode again leaves the text untouched`() = runTest {
         val vm = viewModel()
         vm.onSharesChange("10")

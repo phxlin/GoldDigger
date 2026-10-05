@@ -64,7 +64,9 @@ import com.golddigger.app.ui.common.asPlainPercent
 import com.golddigger.app.ui.common.asSignedCurrency
 import com.golddigger.app.ui.common.asShares
 import com.golddigger.app.ui.common.displayLabel
+import com.golddigger.app.ui.common.filterToNumericInput
 import com.golddigger.app.ui.common.isCash
+import com.golddigger.app.ui.common.limitDecimals
 import com.golddigger.app.ui.common.rememberDeviceDate
 import com.golddigger.app.ui.common.relativeTime
 import com.golddigger.app.ui.components.ChartLegend
@@ -419,9 +421,14 @@ private fun HoldingRow(
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                 )
+                val dayPct = holding.dayChangePct
+                val dayAmount = holding.dayChangePerShare
                 Text(
-                    text = holding.dayChangePct?.asPercent()
-                        ?: relativeTime(holding.priceUpdatedAt),
+                    text = if (dayPct != null && dayAmount != null) {
+                        "${dayAmount.asSignedCurrency()} (${dayPct.asPercent()})"
+                    } else {
+                        relativeTime(holding.priceUpdatedAt)
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     color = holding.dayChangePct?.let {
@@ -440,21 +447,24 @@ private fun HoldingRow(
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
             )
-            val gl = holding.gainLossPct
-            if (!holding.isCash && gl != null) {
+            // Today's move on the whole position; the lifetime gain/loss lives on
+            // the detail screen.
+            // The percent is the same as the Price column's, so only dollars here.
+            val dayAmount = holding.dayChangeValue
+            if (!holding.isCash && dayAmount != null) {
                 Text(
-                    gl.asPercent(),
+                    dayAmount.asSignedCurrency(),
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
-                    color = if (gl >= 0) PortfolioColors.gain else PortfolioColors.loss,
+                    color = if (dayAmount >= 0) PortfolioColors.gain else PortfolioColors.loss,
                 )
             }
         }
     }
 }
 
-private val PRICE_COL_WIDTH = 92.dp
-private val VALUE_COL_WIDTH = 108.dp
+private val PRICE_COL_WIDTH = 116.dp
+private val VALUE_COL_WIDTH = 92.dp
 
 @Composable
 private fun HoldingsHeader(
@@ -578,11 +588,7 @@ private fun AddCashDialog(
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = amount,
-                    onValueChange = { input ->
-                        amount = input.filterIndexed { i, c ->
-                            c.isDigit() || (c == '.' && !input.substring(0, i).contains('.'))
-                        }
-                    },
+                    onValueChange = { amount = it.filterToNumericInput().limitDecimals(2) },
                     label = { Text("Amount") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),

@@ -137,7 +137,13 @@ class RiskMetricsAlignmentTest {
     private val settingsRepository = mockk<SettingsRepository>()
 
     @Suppress("SameParameterValue")
-    private fun row(ticker: String, sector: String, shares: Double, price: Double) = HoldingRow(
+    private fun row(
+        ticker: String,
+        sector: String,
+        shares: Double,
+        price: Double,
+        isEtf: Boolean = false,
+    ) = HoldingRow(
         id = ticker.hashCode().toLong(),
         ticker = ticker,
         shares = shares,
@@ -145,6 +151,7 @@ class RiskMetricsAlignmentTest {
         dateAdded = 0,
         companyName = "$ticker Inc",
         sector = sector,
+        isEtf = isEtf,
         price = price,
         dayChangePct = 0.0,
         priceUpdatedAt = 1L,
@@ -215,6 +222,22 @@ class RiskMetricsAlignmentTest {
             row("AAA", "Tech", shares = 1.0, price = aaa(20)),
             row("BBB", "Tech", shares = 1.0, price = 9_999.0),
         )
+    }
+
+    @Test
+    fun `a fund gets no sector correlation and is not part of the group stocks are compared with`() = runTest {
+        seedOverlappingTickers()
+        // A big, unrelated fund in the same (made-up) sector. If it were in the
+        // comparison group it would drag AAA's correlation away from the exact
+        // 1.0 it has against BBB alone.
+        for (t in 1..20) points += PricePointEntity(ticker = "FUND", price = 500.0 + (t * 7) % 11, timestamp = day(t))
+        stocks["FUND"] = StockEntity("FUND", "FUND Inc", sector = "Tech", isEtf = true)
+        holdingRows.value = holdingRows.value + row("FUND", "Tech", shares = 1_000.0, price = 500.0, isEtf = true)
+
+        repository().refreshRiskMetrics(force = true)
+
+        assertThat(riskUpdates.first { it.first == "FUND" }.third).isNull()
+        assertThat(riskUpdates.first { it.first == "AAA" }.third!!).isWithin(1e-9).of(1.0)
     }
 
     @Test

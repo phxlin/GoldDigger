@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.math.RoundingMode
 import javax.inject.Inject
 
 sealed interface HoldingDetailUiState {
@@ -148,6 +150,13 @@ class HoldingDetailViewModel @Inject constructor(
             if (!add(groupId)) remove(groupId)
         }
         viewModelScope.launch { repository.setGroupsForHolding(ticker, next) }
+    }
+
+    /** Sets the cash position to exactly [amount] (cash is 1 "share" per dollar, cost = value). */
+    fun setCashBalance(amount: Double) {
+        if (amount <= 0.0) return
+        val cents = BigDecimal.valueOf(amount).setScale(2, RoundingMode.HALF_UP).toDouble()
+        viewModelScope.launch { repository.updateHolding(holdingId, cents, cents) }
     }
 
     fun delete(onDeleted: () -> Unit) {

@@ -7,7 +7,10 @@ import com.golddigger.app.data.repository.PortfolioRepository
 import com.golddigger.app.data.remote.SymbolSearchResult
 import com.golddigger.app.data.remote.isLikelyEtf
 import com.golddigger.app.ui.common.asEditableNumber
+import com.golddigger.app.ui.common.asMoneyInput
+import com.golddigger.app.ui.common.asRoundedInput
 import com.golddigger.app.ui.common.filterToNumericInput
+import com.golddigger.app.ui.common.limitDecimals
 import com.golddigger.app.ui.navigation.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
@@ -26,7 +29,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-enum class CostMode { TOTAL, PER_SHARE }
+enum class CostMode(val decimals: Int) {
+    /** Real currency — cents is exact. */
+    TOTAL(2),
+
+    /** A derived unit price; capped more loosely so converting back to [TOTAL] doesn't drift. */
+    PER_SHARE(4),
+}
 
 data class AddEditUiState(
     val editing: Boolean = false,
@@ -109,7 +118,7 @@ class AddEditHoldingViewModel @Inject constructor(
                     selectedName = v.companyName,
                     selectedSector = v.sector,
                     sharesText = v.shares.asEditableNumber(),
-                    costText = v.costBasis.asEditableNumber(),
+                    costText = v.costBasis.asMoneyInput(),
                     costMode = CostMode.TOTAL,
                     isEtf = v.isEtf,
                 )
@@ -151,7 +160,9 @@ class AddEditHoldingViewModel @Inject constructor(
     }
 
     fun onSharesChange(v: String) = _state.update { it.copy(sharesText = v.filterToNumericInput()) }
-    fun onCostChange(v: String) = _state.update { it.copy(costText = v.filterToNumericInput()) }
+    fun onCostChange(v: String) = _state.update {
+        it.copy(costText = v.filterToNumericInput().limitDecimals(it.costMode.decimals))
+    }
 
     /**
      * Switching modes relabels the same field between "total paid" and "price
@@ -159,6 +170,15 @@ class AddEditHoldingViewModel @Inject constructor(
      * under the old mode would be shown unchanged under the new label (e.g. a
      * $5,000 total cost reappearing as a $5,000 price per share). Convert it
      * using the current share count so the same cost basis is preserved.
+     *
+     * Total is real currency, so rounding it to cents is exact. Price per
+     * share is a derived unit price, not currency on its own — rounding *it*
+     * to cents and then multiplying back by the share count is what used to
+     * drift the saved total away from what was actually typed (e.g. $100 over
+     * 3 shares → $33.33/share → saved back as $99.99, not $100). Keeping four
+     * decimals here, the same precision this app already uses for fractional
+     * shares, keeps that round trip accurate to the cent for any realistic
+     * share count.
      */
     fun onCostModeChange(mode: CostMode) = _state.update { s ->
         if (mode == s.costMode) return@update s
@@ -166,9 +186,9 @@ class AddEditHoldingViewModel @Inject constructor(
         val shares = s.shares
         val convertedText = if (current != null && shares != null && shares > 0) {
             when (mode) {
-                CostMode.PER_SHARE -> current / shares
-                CostMode.TOTAL -> current * shares
-            }.asEditableNumber()
+                CostMode.PER_SHARE -> (current / shares).asRoundedInput(mode.decimals)
+                CostMode.TOTAL -> (current * shares).asRoundedInput(mode.decimals)
+            }
         } else {
             s.costText
         }

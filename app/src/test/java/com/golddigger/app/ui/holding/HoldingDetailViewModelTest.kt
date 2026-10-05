@@ -7,6 +7,7 @@ import com.golddigger.app.data.repository.PortfolioRepository
 import com.golddigger.app.domain.model.HoldingValuation
 import com.golddigger.app.ui.navigation.Routes
 import com.google.common.truth.Truth.assertThat
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.Dispatchers
@@ -91,6 +92,20 @@ class HoldingDetailViewModelTest {
             val state = expectMostRecentItem() as HoldingDetailUiState.Loaded
             assertThat(state.allGroups.map { it.name }).containsExactly("Semis")
         }
+    }
+
+    @Test
+    fun `setting the cash balance rewrites shares and cost to the same cents-rounded amount`() = runTest {
+        viewModel().setCashBalance(1234.567)
+
+        coVerify { repository.updateHolding(1L, 1234.57, 1234.57) }
+    }
+
+    @Test
+    fun `a non-positive cash balance is ignored`() = runTest {
+        viewModel().setCashBalance(0.0)
+
+        coVerify(exactly = 0) { repository.updateHolding(any(), any(), any()) }
     }
 
     @Test

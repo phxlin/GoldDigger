@@ -464,8 +464,9 @@ private fun FormationLegend() {
         Spacer(Modifier.height(8.dp))
         Text(
             "Zone height tracks the dollars in that zone. Tap a player to open it; " +
-                "long-press to reassign its role. ETFs are placed by the same rules as " +
-                "individual stocks — nothing here treats them differently.",
+                "long-press to reassign its role. ETFs are placed on beta and volatility " +
+                "alone — the sector-correlation test compares a stock to its sector " +
+                "peers, so it doesn't apply to funds.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

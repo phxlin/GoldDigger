@@ -28,6 +28,7 @@ import com.golddigger.app.data.remote.SymbolSearchResult
 import com.golddigger.app.data.remote.throttle.RequestThrottler
 import com.golddigger.app.data.settings.SettingsRepository
 import com.golddigger.app.di.IoDispatcher
+import com.golddigger.app.domain.CorrelationBasket
 import com.golddigger.app.domain.FormationClassifier
 import com.golddigger.app.domain.PortfolioCalculator
 import com.golddigger.app.domain.RiskMath
@@ -211,7 +212,9 @@ class PortfolioRepositoryImpl @Inject constructor(
                 s.ticker to RiskProfile(
                     ticker = s.ticker,
                     beta = s.beta,
-                    sectorCorrelation = s.sectorCorrelation,
+                    // Ignore any reading stored before funds were exempt, so the
+                    // lineup is right straight away rather than at the next refresh.
+                    sectorCorrelation = if (s.isEtf) null else s.sectorCorrelation,
                     realizedVolatility = RiskMath.realizedVolatility(
                         RiskMath.returns(series),
                         FormationConfig.MIN_POINTS_FOR_ESTIMATE,
@@ -262,18 +265,9 @@ class PortfolioRepositoryImpl @Inject constructor(
                     .associate { it.ticker to it.shares }
                 val pointsByTicker = priceDao.allPoints().groupBy { it.ticker }
 
-                // "Dominant sector" basket used for the correlation estimate: the
-                // set of held tickers in the largest sector by value (if it has
-                // more than one name), else the whole non-cash book.
-                val bySector = summary.holdings
-                    .filterNot { CashHolding.isCashTicker(it.ticker) }
-                    .groupBy { it.sector?.takeIf { s -> s.isNotBlank() } ?: "Unclassified" }
-                val topSector = bySector.entries
-                    .maxByOrNull { (_, rows) -> rows.sumOf { it.marketValue ?: 0.0 } }
-                val basketTickers = topSector
-                    ?.takeIf { it.value.size >= 2 }
-                    ?.value?.map { it.ticker }?.toSet()
-                    ?: sharesByTicker.keys
+                // "Dominant sector" basket used for the correlation estimate —
+                // individual stocks only, see CorrelationBasket.
+                val basketTickers = CorrelationBasket.tickers(summary.holdings)
 
                 for (ticker in heldTickers) {
                     val stock = stocks[ticker] ?: continue
@@ -306,12 +300,20 @@ class PortfolioRepositoryImpl @Inject constructor(
                     // transient failure — keeping a stale value would leave a
                     // holding like a low-beta bond ETF stuck on a one-session
                     // correlation reading for weeks.
-                    val correlation = sectorCorrelation(
-                        ticker = ticker,
-                        basketTickers = basketTickers - ticker,
-                        pointsByTicker = pointsByTicker,
-                        sharesByTicker = sharesByTicker,
-                    )
+                    //
+                    // Funds get no correlation reading at all: it compares a
+                    // stock to its sector peers, which isn't meaningful for an
+                    // ETF, so they're placed on beta and volatility alone.
+                    val correlation = if (stock.isEtf) {
+                        null
+                    } else {
+                        sectorCorrelation(
+                            ticker = ticker,
+                            basketTickers = basketTickers - ticker,
+                            pointsByTicker = pointsByTicker,
+                            sharesByTicker = sharesByTicker,
+                        )
+                    }
 
                     stockDao.updateRisk(ticker, beta, betaIsEstimate, correlation, now)
                 }

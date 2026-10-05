@@ -34,7 +34,21 @@ data class HoldingValuation(
     /** Share of total *priced* portfolio value, 0..100. */
     val portfolioWeightPct: Double,
     val isEtf: Boolean = false,
-)
+) {
+    /**
+     * Today's move in dollars per share, backed out of [price] and [dayChangePct]
+     * the same way the portfolio's day-change total is. Null without both.
+     */
+    val dayChangePerShare: Double?
+        get() {
+            val p = price ?: return null
+            val pct = dayChangePct ?: return null
+            return if (pct <= -100.0) 0.0 else p - p / (1 + pct / 100.0)
+        }
+
+    /** Today's move in dollars across the whole position: [dayChangePerShare] × [shares]. */
+    val dayChangeValue: Double? get() = dayChangePerShare?.times(shares)
+}
 
 data class PortfolioSummary(
     val totalMarketValue: Double,
