@@ -30,6 +30,7 @@ import com.golddigger.app.data.settings.SettingsRepository
 import com.golddigger.app.di.IoDispatcher
 import com.golddigger.app.domain.CorrelationBasket
 import com.golddigger.app.domain.FormationClassifier
+import com.golddigger.app.domain.MarketBenchmark
 import com.golddigger.app.domain.PortfolioCalculator
 import com.golddigger.app.domain.RiskMath
 import com.golddigger.app.domain.model.Formation
@@ -323,15 +324,21 @@ class PortfolioRepositoryImpl @Inject constructor(
 
     /**
      * Beta estimated locally when the provider has none: the holding's return
-     * series against the whole non-cash portfolio's value series. A stand-in for
-     * a true SPY benchmark, which needs historical candles the free tier denies.
+     * series against a market series. That's a held broad-market fund when there
+     * is one (see [MarketBenchmark]) — a true market beta, since the free tier
+     * serves no candles for SPY itself — and otherwise the whole non-cash
+     * portfolio's value series, a rougher stand-in.
      */
     private fun fallbackBeta(
         ticker: String,
         pointsByTicker: Map<String, List<PricePointEntity>>,
         sharesByTicker: Map<String, Double>,
     ): Double? {
-        val marketTickers = sharesByTicker.keys
+        val benchmark = MarketBenchmark.heldFund(sharesByTicker.keys)
+        // Only the asset and the benchmark need to share trading days, so a
+        // holding added last week doesn't hold the estimate back for everyone.
+        val marketTickers = if (benchmark != null) setOf(benchmark) else sharesByTicker.keys
+        val marketWeights = if (benchmark != null) mapOf(benchmark to 1.0) else sharesByTicker
         val dailyByTicker = dailyClosesByTicker(marketTickers + ticker, pointsByTicker)
         // Asset and benchmark series must share one date axis: computing each
         // side's "common dates" independently (over a different set of
@@ -341,7 +348,7 @@ class PortfolioRepositoryImpl @Inject constructor(
         val dates = commonDates(marketTickers + ticker, dailyByTicker)
         if (dates.size < FormationConfig.MIN_POINTS_FOR_ESTIMATE) return null
         val assetSeries = seriesAt(dates, setOf(ticker), dailyByTicker, mapOf(ticker to 1.0))
-        val marketSeries = seriesAt(dates, marketTickers, dailyByTicker, sharesByTicker)
+        val marketSeries = seriesAt(dates, marketTickers, dailyByTicker, marketWeights)
         return RiskMath.beta(RiskMath.returns(assetSeries), RiskMath.returns(marketSeries))
     }
 

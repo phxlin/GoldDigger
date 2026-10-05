@@ -38,6 +38,17 @@ object FormationConfig {
     const val DEFAULT_BETA_BENCHMARK: String = "SPY"
 
     /**
+     * Broad-market funds that can stand in for the benchmark when the provider
+     * has no beta, in order of preference — the first one the user holds wins.
+     * Finnhub's free tier serves no historical candles, but the app already
+     * records price history for everything the user holds, so a held S&P 500 or
+     * total-market fund gives a real market series at no extra cost. Without
+     * one, beta falls back to being measured against the portfolio itself.
+     */
+    val MARKET_BENCHMARK_FUNDS: List<String> =
+        listOf(DEFAULT_BETA_BENCHMARK, "VOO", "IVV", "SPYM", "VTI")
+
+    /**
      * Sector → representative ETF, used when the price provider can supply
      * historical candles for an arbitrary symbol (Finnhub's free tier cannot,
      * so today the dominant-sector correlation is estimated from the user's own

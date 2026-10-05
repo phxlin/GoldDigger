@@ -381,8 +381,14 @@ own label either.
   the same role rather than being split by rounding.
 * **Beta** comes from Finnhub's `/stock/metric` endpoint (free tier), cached on
   `stocks.beta` and refreshed on a 7-day TTL, not on every screen open. When a
-  provider returns no beta, it is estimated from the portfolio's own recorded
-  price history instead — and `stocks.betaIsEstimate` records which source the
+  provider returns no beta, it is estimated locally from the app's own recorded
+  daily closes: measured against the first broad-market fund the user holds from
+  `FormationConfig.MARKET_BENCHMARK_FUNDS` (SPY, VOO, IVV, SPYM, VTI, in that
+  order — a true market beta, since the free tier serves no SPY candles), and only
+  against the portfolio's own combined value when none of those is held. Only the
+  asset and the benchmark need to share trading days. Finnhub does return a beta
+  for most tickers, so this estimate is the fallback, not the usual path.
+  `stocks.betaIsEstimate` records which source the
   cached value came from. Only a confirmed provider-sourced beta is kept
   across a transient fetch failure; a locally-estimated value (or one of
   unknown, pre-upgrade provenance) is always recomputed fresh under the
@@ -612,7 +618,7 @@ Drive, email, or another device.
 
 ## Tests
 
-Unit (`./gradlew :app:testDebugUnitTest`, 164 tests):
+Unit (`./gradlew :app:testDebugUnitTest`, 168 tests):
 
 * `PortfolioCalculatorTest` — totals and per-holding math, including
   group-allocation % measured against a type's own total (ETF vs. individual
@@ -665,7 +671,11 @@ Unit (`./gradlew :app:testDebugUnitTest`, 164 tests):
   price-point timestamps; asserts both `sectorCorrelation` and the fallback-beta
   estimate are computed over the shared timestamp axis rather than paired by raw
   list index; also that a fund gets no correlation and doesn't join the group
-  stocks are compared with
+  stocks are compared with, and that a locally-estimated beta is measured against
+  a held market fund (an exact beta of 2.0 against a constructed market) rather
+  than the portfolio
+* `MarketBenchmarkTest` — the most-preferred held benchmark fund wins, whatever
+  order they're held in; none held means no benchmark
 * `CorrelationBasketTest` — the comparison group is the largest labelled sector
   among individual stocks; funds, cash and unlabelled stocks never count, and a
   top sector with a single name yields no group

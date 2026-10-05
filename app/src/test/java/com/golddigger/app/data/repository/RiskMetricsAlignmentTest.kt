@@ -225,6 +225,39 @@ class RiskMetricsAlignmentTest {
     }
 
     @Test
+    fun `beta is measured against a held market fund, not the portfolio, when there is one`() = runTest {
+        val benchmark = com.golddigger.app.core.FormationConfig.MARKET_BENCHMARK_FUNDS.first()
+        // The market moves by r(t) each day; AAA moves by exactly 2 * r(t), so
+        // its beta to the market is 2.0. ZZZ is a big unrelated holding that
+        // would pull a portfolio-relative beta far from that.
+        var market = 100.0
+        var asset = 50.0
+        for (t in 1..20) {
+            if (t > 1) {
+                val r = 0.01 * ((t % 4) - 1.5)
+                market *= 1 + r
+                asset *= 1 + 2 * r
+            }
+            points += PricePointEntity(ticker = benchmark, price = market, timestamp = day(t))
+            points += PricePointEntity(ticker = "AAA", price = asset, timestamp = day(t))
+            points += PricePointEntity(ticker = "ZZZ", price = 1_000.0 + (t * 37) % 53, timestamp = day(t))
+        }
+        stocks["AAA"] = StockEntity("AAA", "AAA Inc", sector = "Tech")
+        stocks["ZZZ"] = StockEntity("ZZZ", "ZZZ Inc", sector = "Energy")
+        stocks[benchmark] = StockEntity(benchmark, "$benchmark Fund", isEtf = true)
+        holdingRows.value = listOf(
+            row("AAA", "Tech", shares = 1.0, price = asset),
+            row("ZZZ", "Energy", shares = 500.0, price = 1_000.0),
+            row(benchmark, "", shares = 10.0, price = market, isEtf = true),
+        )
+
+        repository().refreshRiskMetrics(force = true)
+
+        assertThat(riskUpdates.first { it.first == "AAA" }.second!!).isWithin(1e-9).of(2.0)
+        assertThat(riskUpdates.first { it.first == benchmark }.second!!).isWithin(1e-9).of(1.0)
+    }
+
+    @Test
     fun `a fund gets no sector correlation and is not part of the group stocks are compared with`() = runTest {
         seedOverlappingTickers()
         // A big, unrelated fund in the same (made-up) sector. If it were in the
